@@ -1,9 +1,10 @@
 # C2 Tool Collection
 
-A fork of [Outflank's C2-Tool-Collection](https://github.com/outflanknl/C2-Tool-Collection) with two additions:
+A fork of [Outflank's C2-Tool-Collection](https://github.com/outflanknl/C2-Tool-Collection) with three additions:
 
 1. **Adaptix C2 support** — every tool has been ported to Adaptix ASX scripts (`.axs`) so the full toolset works natively in [Adaptix C2](https://github.com/adaptix-c2/adaptix) without modification.
 2. **RBCD BOF** — a new Beacon Object File that automates Resource-Based Constrained Delegation setup entirely inside the beacon process (no PowerShell, no child processes).
+3. **adPEAS** — a comprehensive Active Directory security assessment toolkit: a full-featured PowerShell script (`adPEAS/`) plus a companion BOF (`BOF/adPEAS/`) that runs 13 enumeration checks in-process.
 
 ---
 
@@ -11,8 +12,10 @@ A fork of [Outflank's C2-Tool-Collection](https://github.com/outflanknl/C2-Tool-
 
 | Area | Change |
 |------|--------|
-| `adaptix-ported-scripts/` | New directory — ASX ports of all 23 original tools plus the new RBCD BOF. Compiled `.o` files are included so no build step is required to use them. |
+| `adaptix-ported-scripts/` | New directory — ASX ports of all original tools plus the new BOFs. Compiled `.o` files are included so no build step is required to use them. |
 | `BOF/RBCD/` | New BOF — full RBCD automation via ADSI (create machine account → write `msds-allowedtoactonbehalfofotheridentity` → verify → print Rubeus commands). |
+| `BOF/adPEAS/` | New BOF — 13-section in-process AD enumeration (DCs, password policy, Kerberoast, AS-REP roast, delegation, privileged groups, ADCS). |
+| `adPEAS/` | New PowerShell toolkit — comprehensive AD security assessment with native Kerberos stack, 40+ checks, HTML/JSON reporting, BloodHound CE collection, and offensive operations. |
 | `README.md` | This file. |
 
 Everything else — source code, `.cna` scripts, compiled objects — is unchanged from upstream.
