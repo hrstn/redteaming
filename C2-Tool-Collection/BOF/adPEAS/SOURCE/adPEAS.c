@@ -400,17 +400,26 @@ VOID go(IN PCHAR Args, IN ULONG Length) {
     IDirectorySearch *pTempSearch    = NULL;
     IID               IADsIID;
     VARIANT           varDomainDN, varConfigDN, varDnsHost, varDomainFunc;
-    WCHAR             wcPath[PATH_BUF]     = { 0 };
-    WCHAR             wcDomainDN[DN_BUF]   = { 0 };
-    WCHAR             wcConfigDN[DN_BUF]   = { 0 };
-    LPWSTR            lpwAttrs[16]         = { 0 };
-    INT               iFound               = 0;
+    LPWSTR            wcPath     = NULL;
+    LPWSTR            wcDomainDN = NULL;
+    LPWSTR            wcConfigDN = NULL;
+    LPWSTR            lpwAttrs[16] = { 0 };
+    INT               iFound       = 0;
 
     // --- Parse optional server argument ---
     datap parser;
     BeaconDataParse(&parser, Args, Length);
     LPWSTR lpwServer = (LPWSTR)BeaconDataExtract(&parser, NULL);
     BOOL   bHasServer = (lpwServer != NULL && lpwServer[0] != L'\0');
+
+    // Heap-allocate path buffers — keeps go() stack frame small, avoids __chkstk_ms in BOF context
+    wcPath     = (LPWSTR)MSVCRT$calloc(PATH_BUF, sizeof(WCHAR));
+    wcDomainDN = (LPWSTR)MSVCRT$calloc(DN_BUF,   sizeof(WCHAR));
+    wcConfigDN = (LPWSTR)MSVCRT$calloc(DN_BUF,   sizeof(WCHAR));
+    if (!wcPath || !wcDomainDN || !wcConfigDN) {
+        BeaconPrintf(CALLBACK_ERROR, "[adPEAS] Memory allocation failed\n");
+        goto Cleanup;
+    }
 
     // --- Load Activeds.dll and resolve function pointers ---
     hActiveds = LoadLibraryA("Activeds.dll");
@@ -570,17 +579,18 @@ VOID go(IN PCHAR Args, IN ULONG Length) {
     BeaconPrintToStreamW(L"[4] Fine-Grained Password Policies (FGPP)\n");
     BeaconPrintToStreamW(L"------------------------------------------------------------\n");
     {
-        WCHAR wcFGPPPath[PATH_BUF] = { 0 };
+        // Reuse wcPath (domain path no longer needed after pDomainSearch was opened)
+        MSVCRT$memset(wcPath, 0, PATH_BUF * sizeof(WCHAR));
         if (bHasServer) {
-            MSVCRT$swprintf_s(wcFGPPPath, PATH_BUF,
+            MSVCRT$swprintf_s(wcPath, PATH_BUF,
                 L"LDAP://%ls/CN=Password Settings Container,CN=System,%ls",
                 lpwServer, wcDomainDN);
         } else {
-            MSVCRT$swprintf_s(wcFGPPPath, PATH_BUF,
+            MSVCRT$swprintf_s(wcPath, PATH_BUF,
                 L"LDAP://CN=Password Settings Container,CN=System,%ls", wcDomainDN);
         }
 
-        hr = OpenSearch(wcFGPPPath, &pTempSearch, ADsOpenObject);
+        hr = OpenSearch(wcPath, &pTempSearch, ADsOpenObject);
         if (SUCCEEDED(hr) && pTempSearch != NULL) {
             lpwAttrs[0] = L"name";
             lpwAttrs[1] = L"msDS-PasswordSettingsPrecedence";
@@ -757,19 +767,19 @@ VOID go(IN PCHAR Args, IN ULONG Length) {
     // ====================================================
     BeaconPrintToStreamW(L"[13] ADCS Enrollment Services\n");
     BeaconPrintToStreamW(L"------------------------------------------------------------\n");
-    if (wcConfigDN[0]) {
-        WCHAR wcAdcsPath[PATH_BUF] = { 0 };
+    if (wcConfigDN && wcConfigDN[0]) {
+        MSVCRT$memset(wcPath, 0, PATH_BUF * sizeof(WCHAR));
         if (bHasServer) {
-            MSVCRT$swprintf_s(wcAdcsPath, PATH_BUF,
+            MSVCRT$swprintf_s(wcPath, PATH_BUF,
                 L"LDAP://%ls/CN=Enrollment Services,CN=Public Key Services,CN=Services,%ls",
                 lpwServer, wcConfigDN);
         } else {
-            MSVCRT$swprintf_s(wcAdcsPath, PATH_BUF,
+            MSVCRT$swprintf_s(wcPath, PATH_BUF,
                 L"LDAP://CN=Enrollment Services,CN=Public Key Services,CN=Services,%ls",
                 wcConfigDN);
         }
 
-        hr = OpenSearch(wcAdcsPath, &pTempSearch, ADsOpenObject);
+        hr = OpenSearch(wcPath, &pTempSearch, ADsOpenObject);
         if (SUCCEEDED(hr) && pTempSearch != NULL) {
             lpwAttrs[0] = L"cn";
             lpwAttrs[1] = L"dNSHostName";
@@ -801,6 +811,9 @@ Cleanup:
     if (pRootDSE)      { pRootDSE->lpVtbl->Release(pRootDSE);           pRootDSE = NULL;      }
     if (pDomainSearch) { pDomainSearch->lpVtbl->Release(pDomainSearch);  pDomainSearch = NULL; }
     if (pTempSearch)   { pTempSearch->lpVtbl->Release(pTempSearch);      pTempSearch = NULL;   }
+    if (wcPath)        { MSVCRT$free(wcPath);     wcPath     = NULL; }
+    if (wcDomainDN)    { MSVCRT$free(wcDomainDN); wcDomainDN = NULL; }
+    if (wcConfigDN)    { MSVCRT$free(wcConfigDN); wcConfigDN = NULL; }
     OLE32$CoUninitialize();
     BeaconOutputStreamW();
 }
