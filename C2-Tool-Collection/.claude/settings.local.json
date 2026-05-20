@@ -13,7 +13,9 @@
       "Bash(curl -fsSL \"https://raw.githubusercontent.com/Adaptix-Framework/Extension-Kit/main/AD-BOF/ad.axs\")",
       "Bash(curl -fsSL \"https://raw.githubusercontent.com/Adaptix-Framework/Extension-Kit/main/Postex-BOF/postex.axs\")",
       "Bash(x86_64-w64-mingw32-nm /Users/hstn/dev/C2-Tool-Collection/BOF/adPEAS/adPEAS.x64.o)",
-      "Bash(i686-w64-mingw32-nm /Users/hstn/dev/C2-Tool-Collection/BOF/adPEAS/adPEAS.x86.o)"
+      "Bash(i686-w64-mingw32-nm /Users/hstn/dev/C2-Tool-Collection/BOF/adPEAS/adPEAS.x86.o)",
+      "Bash(grep -n 'MSVCRT$\\\\|KERNEL32$\\\\|USER32$\\\\|OLE32$\\\\|OLEAUT32$\\\\|NETAPI32$\\\\|ADVAPI32$' /Users/hstn/dev/C2-Tool-Collection/BOF/RBCD/SOURCE/rbcd.c)",
+      "Bash(grep -oE '[A-Z0-9]+\\\\$[A-Za-z_]+' /Users/hstn/dev/C2-Tool-Collection/BOF/RBCD/SOURCE/rbcd.c)"
     ]
   }
 }
