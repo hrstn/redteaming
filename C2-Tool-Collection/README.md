@@ -1,47 +1,150 @@
-# Outflank - C2 Tool Collection
+# C2 Tool Collection
 
-This repository contains a collection of tools which integrate with Cobalt Strike (and possibly other C2 frameworks) through BOF and reflective DLL loading techniques.
+A fork of [Outflank's C2-Tool-Collection](https://github.com/outflanknl/C2-Tool-Collection) with two additions:
 
-These tools are not part of our [commercial OST product](https://outflank.nl/services/outflank-security-tooling/) and are written with the goal of contributing to the community to which we owe a lot. Currently this repo contains a section with [BOF](https://hstechdocs.helpsystems.com/manuals/cobaltstrike/current/userguide/content/topics/beacon-object-files_main.htm) (Beacon Object Files) tools and a section with other tools (exploits, reflective DLLs, etc.).
-All these tools are written by our team members and are used by us in red team assignments. Over time, more tools will be added or modified with new techniques or functionality.
+1. **Adaptix C2 support** — every tool has been ported to Adaptix ASX scripts (`.axs`) so the full toolset works natively in [Adaptix C2](https://github.com/adaptix-c2/adaptix) without modification.
+2. **RBCD BOF** — a new Beacon Object File that automates Resource-Based Constrained Delegation setup entirely inside the beacon process (no PowerShell, no child processes).
 
-## Toolset contents
-The toolset currently consists of the following tools:
+---
 
-***Beacon Object Files (BOF)***
+## What changed from the original
 
-|Name|Decription|
-|----|----------|
-|**[AddMachineAccount](BOF/AddMachineAccount)**|Abuse default Active Directory machine quota settings (ms-DS-MachineAccountQuota) to add rogue machine accounts.|
-|**[Askcreds](BOF/Askcreds)**|Collect passwords by simply asking.|
-|**[CVE-2022-26923](BOF/CVE-2022-26923)**|CVE-2022-26923 Active Directory (ADCS) Domain Privilege Escalation exploit.|
-|**[Domaininfo](BOF/Domaininfo)**|Enumerate domain information using Active Directory Domain Services.|
-|**[FindObjects](BOF/FindObjects)**|Enumerate processes for specific loaded modules or process handles.|
-|**[Kerberoast](BOF/Kerberoast)**|List all SPN enabled user/service accounts or request service tickets (TGS-REP) which can be cracked offline using HashCat.|
-|**[KerbHash](BOF/KerbHash)**|Hash password to kerberos keys (rc4_hmac, aes128_cts_hmac_sha1, aes256_cts_hmac_sha1, and des_cbc_md5).|
-|**[Klist](BOF/Klist)**|Displays a list of currently cached Kerberos tickets.|
-|**[Lapsdump](BOF/Lapsdump)**|Dump LAPS passwords from specified computers within Active Directory.|
-|**[PetitPotam](BOF/PetitPotam)**|BOF implementation of the PetitPotam attack published by [@topotam77](https://twitter.com/topotam77).|
-|**[Psc](BOF/Psc)**|Show detailed information from processes with established TCP and RDP connections.|
-|**[Psw](BOF/Psw)**|Show window titles from processes with active windows.|
-|**[Psx](BOF/Psx)**|Show detailed information from all processes running on the system and provides a summary of installed security products and tools.|
-|**[Psm](BOF/Psm)**|Show detailed information from a specific process id (loaded modules, tcp connections e.g.).|
-|**[Psk](BOF/Psk)**|Show detailed information from the windows kernel and loaded driver modules and provides a summary of installed security products (AV/EDR drivers).|
-|**[ReconAD](BOF/ReconAD)**|Use ADSI to query Active Directory objects and attributes.|
-|**[Smbinfo](BOF/Smbinfo)**|Gather remote system version info using the NetWkstaGetInfo API without having to run the Cobalt Strike port (tcp-445) scanner.|
-|**[SprayAD](BOF/SprayAD)**|Perform a fast Kerberos or LDAP password spraying attack against Active Directory.|
-|**[StartWebClient](BOF/StartWebClient)**|Start the WebClient Service programmatically from user context using a service trigger.|
-|**[WdToggle](BOF/WdToggle)**|Patch lsass to enable WDigest credential caching and to circumvent Credential Guard (if enabled).|
-|**[Winver](BOF/Winver)**|Display the version of Windows that is running, the build number and patch release (Update Build Revision).|
+| Area | Change |
+|------|--------|
+| `adaptix-ported-scripts/` | New directory — ASX ports of all 23 original tools plus the new RBCD BOF. Compiled `.o` files are included so no build step is required to use them. |
+| `BOF/RBCD/` | New BOF — full RBCD automation via ADSI (create machine account → write `msds-allowedtoactonbehalfofotheridentity` → verify → print Rubeus commands). |
+| `README.md` | This file. |
 
-***Others***
+Everything else — source code, `.cna` scripts, compiled objects — is unchanged from upstream.
 
-|Name|Decription|
-|----|----------|
-|**[PetitPotam](Other/PetitPotam)**|Reflective DLL implementation of the PetitPotam attack published by [@topotam77](https://twitter.com/topotam77)|
-|**[RemotePipeList](Other/RemotePipeList)**|.NET tool to enumerate remote named pipes|
+---
 
-## How to use
-1. Clone this repository.
-2. Each tool contains an individual README.md file with instructions on how to compile and use the tool. With this approach, we want to give the user the choice of which tool they want to use without having to compile all the other tools.
-3. If you would like to compile all the BOF tools at once, type `make` within the [BOF](BOF/) subfolder.
+## Repository layout
+
+```
+C2-Tool-Collection/
+├── BOF/                        # Beacon Object Files (original + RBCD)
+│   ├── AddMachineAccount/
+│   ├── Askcreds/
+│   ├── CVE-2022-26923/
+│   ├── Domaininfo/
+│   ├── FindObjects/
+│   ├── KerbHash/
+│   ├── Kerberoast/
+│   ├── Klist/
+│   ├── Lapsdump/
+│   ├── PetitPotam/
+│   ├── Psc / Psm / Psk / Psw / Psx/
+│   ├── RBCD/                   ← new
+│   ├── ReconAD/
+│   ├── Smbinfo/
+│   ├── SprayAD/
+│   ├── StartWebClient/
+│   ├── WdToggle/
+│   └── Winver/
+├── Other/                      # Reflective DLL and .NET tools
+│   ├── PetitPotam/
+│   └── RemotePipeList/
+├── adPEAS/                     # adPEAS PowerShell enumeration scripts
+└── adaptix-ported-scripts/     ← new
+    ├── *.axs                   # Adaptix ASX command scripts
+    ├── *.x64.o / *.x86.o      # Compiled BOF objects (ready to use)
+    └── README.md
+```
+
+---
+
+## BOF tools
+
+| Name | Description |
+|------|-------------|
+| **[AddMachineAccount](BOF/AddMachineAccount)** | Abuse `ms-DS-MachineAccountQuota` to create or delete rogue machine accounts via ADSI. |
+| **[Askcreds](BOF/Askcreds)** | Collect credentials by prompting the user with a Windows credential dialog. |
+| **[CVE-2022-26923](BOF/CVE-2022-26923)** | ADCS domain privilege escalation — creates a machine account with `dNSHostName` set to the DC FQDN. |
+| **[Domaininfo](BOF/Domaininfo)** | Enumerate domain name, forest, DCs, and functional level via AD Domain Services. |
+| **[FindObjects](BOF/FindObjects)** | Enumerate processes for specific loaded modules (`FindModule`) or process handles (`FindProcHandle`). |
+| **[KerbHash](BOF/KerbHash)** | Hash a password to Kerberos keys (rc4_hmac, aes128, aes256, des_cbc_md5). |
+| **[Kerberoast](BOF/Kerberoast)** | List SPN-enabled accounts or request TGS tickets for offline cracking. |
+| **[Klist](BOF/Klist)** | List, purge, or request cached Kerberos tickets. |
+| **[Lapsdump](BOF/Lapsdump)** | Read LAPS passwords from AD computer objects. |
+| **[PetitPotam](BOF/PetitPotam)** | Coerce NTLM authentication via MS-EFSRPC (BOF variant). |
+| **[Psc](BOF/Psc)** | List processes with active TCP/RDP connections. |
+| **[Psm](BOF/Psm)** | Detailed view of a single process — loaded modules, TCP connections, handles. |
+| **[Psk](BOF/Psk)** | List kernel-mode drivers; highlights AV/EDR drivers. |
+| **[Psw](BOF/Psw)** | List processes with visible windows and their titles. |
+| **[Psx](BOF/Psx)** | Full process list with installed security product summary. |
+| **[RBCD](BOF/RBCD)** ← new | Automate Resource-Based Constrained Delegation setup in-process — creates a machine account, writes `msds-allowedtoactonbehalfofotheridentity` on a target computer, verifies, and outputs Rubeus commands. |
+| **[ReconAD](BOF/ReconAD)** | ADSI-based AD enumeration with LDAP filters — users, computers, groups, or arbitrary objects. |
+| **[Smbinfo](BOF/Smbinfo)** | Remote OS version and domain info via `NetWkstaGetInfo` (no CS port scanner). |
+| **[SprayAD](BOF/SprayAD)** | Kerberos or LDAP password spray against all (or filtered) AD accounts. |
+| **[StartWebClient](BOF/StartWebClient)** | Start the WebClient (WebDAV) service from user context — required for WebDAV relay attacks. |
+| **[WdToggle](BOF/WdToggle)** | Patch lsass to re-enable WDigest caching and bypass Credential Guard. |
+| **[Winver](BOF/Winver)** | Display Windows version, build number, and Update Build Revision. |
+
+Other tools:
+
+| Name | Description |
+|------|-------------|
+| **[PetitPotam (RDLL)](Other/PetitPotam)** | Reflective DLL variant of PetitPotam. |
+| **[RemotePipeList](Other/RemotePipeList)** | .NET tool to enumerate named pipes on a remote host. |
+
+---
+
+## Adaptix C2 support
+
+All tools are available as Adaptix ASX scripts in [`adaptix-ported-scripts/`](adaptix-ported-scripts/). Compiled object files are included — no build step is required.
+
+**Quick start:**
+
+```
+adaptix-ported-scripts/
+├── askcreds.axs + Askcreds.x64.o / .x86.o
+├── machineaccounts.axs + AddMachineAccount.x64.o / ...
+├── rbcd.axs + rbcd.x64.o / rbcd.x86.o
+└── ... (one .axs per tool)
+```
+
+1. Copy the directory contents to your Adaptix extensions folder.
+2. Load the `.axs` files via **Script Manager → Load**.
+3. Commands appear immediately in the beacon console.
+
+See [`adaptix-ported-scripts/README.md`](adaptix-ported-scripts/README.md) for the full command reference and installation details.
+
+**Example — RBCD attack flow:**
+
+```
+# Set up RBCD from within a beacon (no PowerShell required)
+rbcd -computer FAKECOMPUTER -password Passw0rd! -target SQL01
+
+# The BOF prints the Rubeus commands to run locally:
+# Rubeus.exe hash /password:Passw0rd! /user:FAKECOMPUTER$ /domain:contoso.local /salt:...
+# Rubeus.exe s4u /user:FAKECOMPUTER$ /aes256:<hash> /impersonateuser:Administrator /msdsspn:cifs/sql01.contoso.local /nowrap
+```
+
+---
+
+## Cobalt Strike support
+
+The original `.cna` scripts are unchanged. Import them via **Script Manager** as documented in each tool's `README.md`.
+
+---
+
+## Compilation
+
+Each BOF has a `SOURCE/` subdirectory with a `Makefile`. Requires MinGW-w64 (`x86_64-w64-mingw32-gcc` and `i686-w64-mingw32-gcc`).
+
+```bash
+# Compile all original BOFs at once
+cd BOF && make
+
+# Compile RBCD only
+cd BOF/RBCD/SOURCE && make
+```
+
+---
+
+## Credits
+
+All original tools are written by the [Outflank](https://outflank.nl) team and released under their original license. See individual tool `README.md` files for authors and references.
+
+Adaptix port and RBCD BOF added in this fork.
