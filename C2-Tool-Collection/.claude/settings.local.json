@@ -11,7 +11,9 @@
       "Bash(curl -fsSL \"https://raw.githubusercontent.com/Adaptix-Framework/Extension-Kit/main/extension-kit.axs\")",
       "Bash(curl -fsSL \"https://raw.githubusercontent.com/Adaptix-Framework/Extension-Kit/main/Process-BOF/process.axs\")",
       "Bash(curl -fsSL \"https://raw.githubusercontent.com/Adaptix-Framework/Extension-Kit/main/AD-BOF/ad.axs\")",
-      "Bash(curl -fsSL \"https://raw.githubusercontent.com/Adaptix-Framework/Extension-Kit/main/Postex-BOF/postex.axs\")"
+      "Bash(curl -fsSL \"https://raw.githubusercontent.com/Adaptix-Framework/Extension-Kit/main/Postex-BOF/postex.axs\")",
+      "Bash(x86_64-w64-mingw32-nm /Users/hstn/dev/C2-Tool-Collection/BOF/adPEAS/adPEAS.x64.o)",
+      "Bash(i686-w64-mingw32-nm /Users/hstn/dev/C2-Tool-Collection/BOF/adPEAS/adPEAS.x86.o)"
     ]
   }
 }
