@@ -1,2 +1,0 @@
-/Users/hstn/dev/C2-Tool-Collection/Loaders/RemoteLoader/bin/Release/net8.0/win-x64/publish/RemoteLoader.pdb
-/Users/hstn/dev/C2-Tool-Collection/Loaders/RemoteLoader/bin/Release/net8.0/win-x64/publish/RemoteLoader.exe
