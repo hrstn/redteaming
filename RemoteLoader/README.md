@@ -71,3 +71,7 @@ Load with:
 ```cmd
 RemoteLoader.exe --xor 65
 ```
+
+Poc
+
+![Alt text](PoC.png)
