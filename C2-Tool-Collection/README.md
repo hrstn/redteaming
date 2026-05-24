@@ -26,7 +26,7 @@ Everything else — source code, `.cna` scripts, compiled objects — is unchang
 
 ```
 C2-Tool-Collection/
-├── BOF/                        # Beacon Object Files (original + RBCD)
+├── BOF/                        # Beacon Object Files (original + new)
 │   ├── AddMachineAccount/
 │   ├── Askcreds/
 │   ├── CVE-2022-26923/
@@ -44,11 +44,12 @@ C2-Tool-Collection/
 │   ├── SprayAD/
 │   ├── StartWebClient/
 │   ├── WdToggle/
-│   └── Winver/
+│   ├── Winver/
+│   └── adPEAS/                 ← new
 ├── Other/                      # Reflective DLL and .NET tools
 │   ├── PetitPotam/
 │   └── RemotePipeList/
-├── adPEAS/                     # adPEAS PowerShell enumeration scripts
+├── adPEAS/                     # ← new: PowerShell AD assessment toolkit
 └── adaptix-ported-scripts/     ← new
     ├── *.axs                   # Adaptix ASX command scripts
     ├── *.x64.o / *.x86.o      # Compiled BOF objects (ready to use)
@@ -77,6 +78,7 @@ C2-Tool-Collection/
 | **[Psw](BOF/Psw)** | List processes with visible windows and their titles. |
 | **[Psx](BOF/Psx)** | Full process list with installed security product summary. |
 | **[RBCD](BOF/RBCD)** ← new | Automate Resource-Based Constrained Delegation setup in-process — creates a machine account, writes `msds-allowedtoactonbehalfofotheridentity` on a target computer, verifies, and outputs Rubeus commands. |
+| **[adPEAS](BOF/adPEAS)** ← new | In-process AD enumeration across 13 sections: DCs, krbtgt age, password policy, FGPP, trusts, AS-REP roastable accounts, Kerberoastable accounts, unconstrained/constrained/RBCD delegation, privileged group members, passwords in descriptions, and ADCS enrollment services. |
 | **[ReconAD](BOF/ReconAD)** | ADSI-based AD enumeration with LDAP filters — users, computers, groups, or arbitrary objects. |
 | **[Smbinfo](BOF/Smbinfo)** | Remote OS version and domain info via `NetWkstaGetInfo` (no CS port scanner). |
 | **[SprayAD](BOF/SprayAD)** | Kerberos or LDAP password spray against all (or filtered) AD accounts. |
@@ -90,6 +92,7 @@ Other tools:
 |------|-------------|
 | **[PetitPotam (RDLL)](Other/PetitPotam)** | Reflective DLL variant of PetitPotam. |
 | **[RemotePipeList](Other/RemotePipeList)** | .NET tool to enumerate named pipes on a remote host. |
+| **[adPEAS (PowerShell)](adPEAS)** ← new | Full AD security assessment script. Native Kerberos stack, 40+ checks across 9 categories, interactive HTML reports, JSON export, BloodHound CE data collection, and offensive operations (Kerberoasting, AS-REP roasting, Golden/Silver/Diamond tickets, RBCD abuse, Shadow Credentials, PKINIT). No dependencies — single file, runs on any Windows system. |
 
 ---
 
@@ -148,6 +151,6 @@ cd BOF/RBCD/SOURCE && make
 
 ## Credits
 
-All original tools are written by the [Outflank](https://outflank.nl) team and released under their original license. See individual tool `README.md` files for authors and references.
+The original BOF tools and `.cna` scripts are written by the [Outflank](https://outflank.nl) team and released under their original license. See individual tool `README.md` files for authors and references.
 
-Adaptix port and RBCD BOF added in this fork.
+The following were added in this fork: Adaptix ASX port, RBCD BOF, adPEAS PowerShell toolkit, and adPEAS BOF.
