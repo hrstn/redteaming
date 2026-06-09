@@ -1,0 +1,303 @@
+{
+  "version": "1.0.0",
+  "tool_rules": [
+    {
+      "id": "TOOL-001",
+      "title": "Command Execution Tool",
+      "severity": "CRITICAL",
+      "name_patterns": ["exec", "execute", "shell", "bash", "sh", "zsh", "cmd", "run_command", "system_call", "eval", "spawn", "popen", "invoke"],
+      "desc_patterns": ["execute command", "run command", "shell command", "system command", "arbitrary command", "execute code", "run shell", "bash script", "shell script"],
+      "param_patterns": ["command", "cmd", "exec", "shell", "bash", "args", "argv"],
+      "abuse_categories": ["remote_execution", "privilege_escalation"],
+      "impact": "Allows arbitrary command execution on the host system, leading to full server compromise",
+      "remediation": "Restrict to allowlisted commands only, run in sandboxed environment, require strong authentication and audit logging",
+      "base_score": 9.8
+    },
+    {
+      "id": "TOOL-002",
+      "title": "Arbitrary File Read",
+      "severity": "HIGH",
+      "name_patterns": ["read_file", "open_file", "get_file", "fetch_file", "load_file", "cat_file", "file_read", "read_content"],
+      "desc_patterns": ["read file", "open file", "get file contents", "read arbitrary", "access file", "file content", "read path", "load file"],
+      "param_patterns": ["path", "file", "filename", "filepath", "file_path"],
+      "abuse_categories": ["data_exfiltration", "credential_access", "information_disclosure"],
+      "impact": "Allows reading arbitrary files including secrets, credentials, private keys, and configuration files",
+      "remediation": "Restrict to a specific directory with a chroot/allowlist, validate and sanitize all path inputs",
+      "base_score": 8.5
+    },
+    {
+      "id": "TOOL-003",
+      "title": "Arbitrary File Write",
+      "severity": "HIGH",
+      "name_patterns": ["write_file", "save_file", "create_file", "put_file", "append_file", "write_content", "file_write", "store_file"],
+      "desc_patterns": ["write file", "save file", "create file", "write to path", "write arbitrary", "write content", "file write", "store content"],
+      "param_patterns": ["path", "file", "filename", "filepath", "file_path", "content", "data"],
+      "abuse_categories": ["remote_execution", "privilege_escalation", "data_exfiltration"],
+      "impact": "Allows writing arbitrary files; attacker can plant backdoors, overwrite config files, or inject malicious content",
+      "remediation": "Restrict write paths to specific safe directories, validate content, require strong authentication",
+      "base_score": 8.8
+    },
+    {
+      "id": "TOOL-004",
+      "title": "File Deletion Tool",
+      "severity": "HIGH",
+      "name_patterns": ["delete_file", "remove_file", "unlink", "rm_file", "delete", "remove"],
+      "desc_patterns": ["delete file", "remove file", "unlink file", "delete path", "delete arbitrary"],
+      "param_patterns": ["path", "file", "filename"],
+      "abuse_categories": ["dos", "data_exfiltration"],
+      "impact": "Allows deleting arbitrary files, enabling denial of service or destruction of critical data",
+      "remediation": "Restrict deletion to specific safe directories, implement soft-delete with audit logs",
+      "base_score": 7.5
+    },
+    {
+      "id": "TOOL-005",
+      "title": "HTTP/Network Request Tool (SSRF Risk)",
+      "severity": "HIGH",
+      "name_patterns": ["fetch", "http_get", "http_post", "request", "curl", "wget", "download", "http_request", "web_request", "url_fetch"],
+      "desc_patterns": ["http request", "fetch url", "make request", "get url", "http get", "http post", "web request", "fetch resource", "download url", "make http"],
+      "param_patterns": ["url", "uri", "endpoint", "host", "target", "address"],
+      "abuse_categories": ["ssrf", "lateral_movement", "information_disclosure"],
+      "impact": "Allows server-side requests to arbitrary URLs, enabling SSRF to internal services, cloud metadata endpoints, and private networks",
+      "remediation": "Implement URL allowlisting, block private IP ranges and metadata endpoints, use egress filtering",
+      "base_score": 8.2
+    },
+    {
+      "id": "TOOL-006",
+      "title": "Database Query Tool (Injection Risk)",
+      "severity": "HIGH",
+      "name_patterns": ["query", "sql_query", "execute_query", "db_query", "run_query", "raw_query", "exec_sql", "database_query"],
+      "desc_patterns": ["execute query", "run query", "sql query", "database query", "raw sql", "arbitrary query", "execute sql"],
+      "param_patterns": ["query", "sql", "statement", "expression", "filter"],
+      "abuse_categories": ["injection", "data_exfiltration", "privilege_escalation"],
+      "impact": "Allows arbitrary database queries, enabling data exfiltration, schema enumeration, and potential database privilege escalation",
+      "remediation": "Use parameterized queries only, restrict to read-only operations where possible, implement row-level security",
+      "base_score": 8.5
+    },
+    {
+      "id": "TOOL-007",
+      "title": "Directory Listing / File Enumeration",
+      "severity": "MEDIUM",
+      "name_patterns": ["list_dir", "ls", "listdir", "list_files", "enumerate_dir", "glob", "find_files", "search_files", "scan_dir"],
+      "desc_patterns": ["list directory", "list files", "enumerate files", "directory listing", "file listing", "list contents", "directory contents"],
+      "param_patterns": ["path", "directory", "dir", "folder", "pattern"],
+      "abuse_categories": ["information_disclosure", "data_exfiltration"],
+      "impact": "Enables enumeration of filesystem structure, discovery of sensitive files and directories",
+      "remediation": "Restrict to specific safe directories, disable recursive listing, require authentication",
+      "base_score": 5.5
+    },
+    {
+      "id": "TOOL-008",
+      "title": "Environment Variable Access",
+      "severity": "MEDIUM",
+      "name_patterns": ["get_env", "read_env", "env_var", "getenv", "environment", "get_environment"],
+      "desc_patterns": ["environment variable", "env var", "read environment", "get env", "system environment"],
+      "param_patterns": ["name", "var", "variable", "key", "env_var"],
+      "abuse_categories": ["credential_access", "information_disclosure"],
+      "impact": "Leaks environment variables which commonly contain API keys, passwords, database credentials, and tokens",
+      "remediation": "Never expose environment variables via tools, use secrets managers instead",
+      "base_score": 7.5
+    },
+    {
+      "id": "TOOL-009",
+      "title": "Code Evaluation / Scripting",
+      "severity": "CRITICAL",
+      "name_patterns": ["eval", "eval_code", "execute_code", "run_code", "run_script", "exec_code", "interpret", "python_eval", "js_eval"],
+      "desc_patterns": ["evaluate code", "execute code", "run script", "execute script", "python code", "javascript eval", "dynamic code", "code execution"],
+      "param_patterns": ["code", "script", "expression", "eval", "source"],
+      "abuse_categories": ["remote_execution", "privilege_escalation"],
+      "impact": "Allows execution of arbitrary code in the server's runtime environment",
+      "remediation": "Remove code evaluation capabilities entirely or sandbox completely with no network/filesystem access",
+      "base_score": 9.9
+    },
+    {
+      "id": "TOOL-010",
+      "title": "Admin / Privileged Operations",
+      "severity": "CRITICAL",
+      "name_patterns": ["admin", "sudo", "root", "privilege", "escalate", "elevate", "impersonate", "become_user", "switch_user"],
+      "desc_patterns": ["admin operation", "privileged", "root access", "elevated privileges", "sudo command", "administrative", "system admin"],
+      "param_patterns": ["user", "role", "privilege", "sudo"],
+      "abuse_categories": ["privilege_escalation", "auth_bypass"],
+      "impact": "Provides direct access to privileged operations or allows privilege escalation",
+      "remediation": "Remove admin tools from MCP exposure, require multi-factor authentication and explicit approval workflows",
+      "base_score": 9.5
+    },
+    {
+      "id": "TOOL-011",
+      "title": "Process / System Management",
+      "severity": "HIGH",
+      "name_patterns": ["kill_process", "start_process", "list_processes", "process_manager", "spawn_process", "fork", "daemon"],
+      "desc_patterns": ["manage process", "kill process", "start process", "list processes", "process management", "system process"],
+      "param_patterns": ["pid", "process", "program", "executable", "signal"],
+      "abuse_categories": ["remote_execution", "dos", "privilege_escalation"],
+      "impact": "Allows process manipulation which can be used to kill security tools, launch backdoors, or crash services",
+      "remediation": "Remove process management from MCP interface, implement strict allowlisting if required",
+      "base_score": 8.0
+    },
+    {
+      "id": "TOOL-012",
+      "title": "Secret / Credential Management Access",
+      "severity": "CRITICAL",
+      "name_patterns": ["get_secret", "read_secret", "get_credential", "get_password", "get_token", "get_api_key", "secret_manager", "vault_read"],
+      "desc_patterns": ["get secret", "read secret", "retrieve credential", "get password", "access token", "api key", "secret value"],
+      "param_patterns": ["secret_name", "credential", "key_name", "token_name"],
+      "abuse_categories": ["credential_access", "data_exfiltration"],
+      "impact": "Direct access to credential stores; compromise allows lateral movement to all connected systems",
+      "remediation": "Never expose secret retrieval through MCP, use service accounts with minimal permissions",
+      "base_score": 9.5
+    },
+    {
+      "id": "TOOL-013",
+      "title": "Network / Socket Operations",
+      "severity": "HIGH",
+      "name_patterns": ["connect", "socket", "tcp_connect", "network_scan", "port_scan", "nmap", "nc", "netcat"],
+      "desc_patterns": ["network connection", "socket connect", "tcp connection", "scan ports", "network scan", "connect to host"],
+      "param_patterns": ["host", "port", "address", "ip", "target"],
+      "abuse_categories": ["lateral_movement", "ssrf", "information_disclosure"],
+      "impact": "Enables internal network scanning, lateral movement, and connection to internal services",
+      "remediation": "Block arbitrary network connections, use allowlisted service endpoints only",
+      "base_score": 7.8
+    },
+    {
+      "id": "TOOL-014",
+      "title": "Cloud Metadata / Configuration Access",
+      "severity": "HIGH",
+      "name_patterns": ["get_metadata", "cloud_config", "instance_metadata", "imds", "aws_config"],
+      "desc_patterns": ["cloud metadata", "instance metadata", "imds", "aws metadata", "azure metadata", "gcp metadata", "cloud configuration"],
+      "param_patterns": ["endpoint", "path", "service"],
+      "abuse_categories": ["credential_access", "information_disclosure", "lateral_movement"],
+      "impact": "Access to cloud instance metadata including IAM credentials, allowing cloud environment takeover",
+      "remediation": "Block access to metadata endpoints, disable IMDSv1, require IMDSv2 with hop limit 1",
+      "base_score": 9.0
+    }
+  ],
+  "resource_rules": [
+    {
+      "id": "RES-001",
+      "title": "Sensitive System File Exposed",
+      "severity": "CRITICAL",
+      "uri_patterns": ["/etc/passwd", "/etc/shadow", "/etc/sudoers", "/proc/", "/sys/", "/.ssh/", "/.gnupg/"],
+      "name_patterns": ["passwd", "shadow", "sudoers", "proc", "sys", "ssh_key", "private_key"],
+      "desc_patterns": ["system file", "password file", "shadow file", "ssh key", "private key"],
+      "abuse_categories": ["credential_access", "privilege_escalation"],
+      "impact": "Direct exposure of system credentials and key material",
+      "remediation": "Remove all system file resources immediately",
+      "base_score": 9.5
+    },
+    {
+      "id": "RES-002",
+      "title": "Secret / Credential Resource Exposed",
+      "severity": "CRITICAL",
+      "uri_patterns": [".env", ".env.local", ".env.production", "secrets", "credentials", ".aws/credentials", "kubeconfig", "serviceaccount"],
+      "name_patterns": ["secret", "credential", "api_key", "token", "password", "passwd", "auth", "private_key", "certificate"],
+      "desc_patterns": ["secret", "credential", "api key", "token", "password", "private key", "authentication"],
+      "abuse_categories": ["credential_access", "data_exfiltration"],
+      "impact": "Leaks secrets, API keys, and credentials enabling access to downstream systems",
+      "remediation": "Remove credential resources from MCP, use secrets management services",
+      "base_score": 9.8
+    },
+    {
+      "id": "RES-003",
+      "title": "Internal Network Resource Exposed",
+      "severity": "HIGH",
+      "uri_patterns": ["localhost", "127.0.0.1", "10.", "192.168.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.", "169.254.169.254", "fd00:", "fc00:"],
+      "name_patterns": ["internal", "private", "local", "intranet"],
+      "desc_patterns": ["internal service", "private network", "local service", "intranet"],
+      "abuse_categories": ["lateral_movement", "information_disclosure"],
+      "impact": "Exposes internal network services, enabling lateral movement and internal reconnaissance",
+      "remediation": "Never expose internal network resources, use proper service meshes with authentication",
+      "base_score": 8.0
+    },
+    {
+      "id": "RES-004",
+      "title": "Cloud Metadata Endpoint Exposed",
+      "severity": "CRITICAL",
+      "uri_patterns": ["169.254.169.254", "metadata.google.internal", "169.254.170.2", "metadata/instance"],
+      "name_patterns": ["metadata", "imds", "instance_metadata"],
+      "desc_patterns": ["metadata endpoint", "instance metadata", "cloud metadata", "imds"],
+      "abuse_categories": ["credential_access", "lateral_movement"],
+      "impact": "Cloud metadata endpoint exposure leaks IAM credentials, enabling cloud account takeover",
+      "remediation": "Block metadata endpoint access at network level, remove from resources immediately",
+      "base_score": 9.8
+    },
+    {
+      "id": "RES-005",
+      "title": "Log / Debug Information Exposed",
+      "severity": "MEDIUM",
+      "uri_patterns": ["/var/log/", "/tmp/", "debug", "trace", "error.log", "access.log", ".log"],
+      "name_patterns": ["log", "debug", "trace", "error_log", "access_log", "application_log"],
+      "desc_patterns": ["log file", "debug output", "application logs", "error logs", "trace logs"],
+      "abuse_categories": ["information_disclosure"],
+      "impact": "Log files may contain sensitive data, authentication tokens, internal IPs, and application secrets",
+      "remediation": "Remove log resources from MCP, implement proper log management with access controls",
+      "base_score": 5.5
+    },
+    {
+      "id": "RES-006",
+      "title": "Configuration File Exposed",
+      "severity": "HIGH",
+      "uri_patterns": ["config.json", "config.yaml", "config.yml", "settings.json", "settings.yaml", "appsettings", "database.yml", "database.json"],
+      "name_patterns": ["config", "configuration", "settings", "database_config", "app_config"],
+      "desc_patterns": ["configuration file", "settings file", "app config", "database configuration"],
+      "abuse_categories": ["information_disclosure", "credential_access"],
+      "impact": "Configuration files frequently contain database credentials, API keys, and internal service addresses",
+      "remediation": "Restrict configuration file access, use environment variables for secrets",
+      "base_score": 7.5
+    }
+  ],
+  "prompt_rules": [
+    {
+      "id": "PRMT-001",
+      "title": "Prompt Injection Attack Surface",
+      "severity": "HIGH",
+      "name_patterns": ["user_input", "user_message", "chat", "message", "query", "ask"],
+      "desc_patterns": ["user input", "user message", "user query", "chat message", "user request", "takes user", "accepts user"],
+      "param_patterns": ["input", "message", "query", "text", "user_input", "content"],
+      "abuse_categories": ["prompt_injection", "social_engineering"],
+      "impact": "Prompts accepting user input without sanitization are vulnerable to injection attacks that override agent instructions",
+      "remediation": "Implement input sanitization, use structured outputs, add injection detection",
+      "base_score": 7.5
+    },
+    {
+      "id": "PRMT-002",
+      "title": "System Instruction Override Risk",
+      "severity": "HIGH",
+      "name_patterns": ["system", "system_prompt", "instructions", "override", "jailbreak"],
+      "desc_patterns": ["system instruction", "system prompt", "override instruction", "base instruction"],
+      "param_patterns": ["system", "instructions", "prompt", "system_message"],
+      "abuse_categories": ["prompt_injection", "auth_bypass"],
+      "impact": "System-level prompts with mutable parameters allow attackers to override agent behavior",
+      "remediation": "Never allow user control over system-level instructions",
+      "base_score": 8.0
+    },
+    {
+      "id": "PRMT-003",
+      "title": "Data Leakage via Prompt Template",
+      "severity": "MEDIUM",
+      "name_patterns": ["summarize", "analyze", "process", "review", "generate"],
+      "desc_patterns": ["summarize document", "analyze content", "process data", "review file", "generate report"],
+      "param_patterns": ["document", "content", "data", "file", "context"],
+      "abuse_categories": ["data_exfiltration", "information_disclosure"],
+      "impact": "Prompts that inject large data contexts may allow exfiltration via the model response",
+      "remediation": "Limit context injection, implement output filtering, monitor for exfiltration patterns",
+      "base_score": 6.0
+    }
+  ],
+  "content_patterns": {
+    "secrets": [
+      "(?i)api[_-]?key\\s*[=:]\\s*['\"]?[A-Za-z0-9+/]{20,}",
+      "(?i)secret[_-]?key\\s*[=:]\\s*['\"]?[A-Za-z0-9+/]{20,}",
+      "(?i)password\\s*[=:]\\s*['\"]?[^\\s'\"]{8,}",
+      "(?i)passwd\\s*[=:]\\s*['\"]?[^\\s'\"]{8,}",
+      "(?i)token\\s*[=:]\\s*['\"]?[A-Za-z0-9._-]{20,}",
+      "(?i)bearer\\s+[A-Za-z0-9._-]{20,}",
+      "(?i)aws[_-]?access[_-]?key[_-]?id\\s*[=:]\\s*['\"]?AKIA[A-Z0-9]{16}",
+      "(?i)aws[_-]?secret[_-]?access[_-]?key\\s*[=:]\\s*['\"]?[A-Za-z0-9+/]{40}",
+      "-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----",
+      "(?i)private[_-]?key\\s*[=:]\\s*['\"]?[A-Za-z0-9+/]{30,}",
+      "(?i)database[_-]?url\\s*[=:]\\s*['\"]?[a-z]+://[^\\s'\"]{10,}",
+      "(?i)jdbc:[a-z]+://[^\\s'\"]{10,}",
+      "(?i)ghp_[A-Za-z0-9]{36}",
+      "(?i)github[_-]?token\\s*[=:]\\s*['\"]?[A-Za-z0-9_]{20,}"
+    ]
+  }
+}
