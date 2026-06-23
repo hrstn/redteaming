@@ -66,6 +66,11 @@ namespace RemoteLoader
 
         [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
         public static extern IntPtr LoadLibrary([MarshalAs(UnmanagedType.LPStr)] string lpLibFileName);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool VirtualProtect(IntPtr lpAddress, UIntPtr dwSize,
+            uint flNewProtect, out uint lpflOldProtect);
     }
 
     // ── COFF structures ─────────────────────────────────────────────────────
@@ -81,6 +86,7 @@ namespace RemoteLoader
         public int     Characteristics;
         public IntPtr  Base;
         public int     AllocSize;
+        public uint    FinalProtect;   // desired post-relocation protection
     }
 
     internal sealed class CoffSymbol
@@ -158,6 +164,7 @@ namespace RemoteLoader
         private readonly Dictionary<string, IntPtr> _api = new(StringComparer.Ordinal);
         private readonly List<Delegate> _pins = new();
         private readonly List<IntPtr>   _allocations = new();
+        private readonly Dictionary<string, IntPtr> _iat = new(StringComparer.Ordinal);
         private readonly object _writeLock = new();
         private StringBuilder? _capture;
         private TextWriter?    _savedOut;
@@ -203,6 +210,7 @@ namespace RemoteLoader
                 AllocateSections(coff, coffBytes);
                 var symAddr = ResolveSymbols(coff);
                 ApplyRelocations(coff, coffBytes, symAddr);
+                ProtectSections(coff);
                 IntPtr goAddr = FindEntryPoint(coff, symAddr);
                 if (goAddr == IntPtr.Zero)
                     throw new InvalidOperationException(
@@ -215,8 +223,13 @@ namespace RemoteLoader
             catch (Exception ex)
             {
                 result.ExitCode = -1;
+                // Include the full stack so a NullReferenceException / AV during
+                // BOF execution points at the offending stub instead of the bare
+                // "Object reference not set" string.
                 if (string.IsNullOrEmpty(result.Output))
-                    result.Output = ex.Message;
+                    result.Output = ex.ToString();
+                else
+                    result.Output += "\n" + ex.ToString();
             }
             finally
             {
@@ -320,6 +333,17 @@ namespace RemoteLoader
                 };
                 sym.Name = ReadSymbolName(data, off, f.StringTable);
                 f.Symbols[i] = sym;
+
+                // Auxiliary symbol records follow a primary symbol in the table but
+                // have a different (non-symbol) layout; the loop skips them via
+                // NumberOfAuxSymbols. We must still populate those array slots with a
+                // placeholder, otherwise ResolveSymbols / FindEntryPoint iterate the
+                // full Symbols array and dereference a null entry -> NRE. Relocations
+                // only ever reference primary symbol indices, so the placeholder
+                // values are never used for resolution.
+                for (int a = 1; a <= sym.NumberOfAuxSymbols && i + a < f.Symbols.Length; a++)
+                    f.Symbols[i + a] = new CoffSymbol { Name = "", SectionNumber = 0, StorageClass = 0 };
+
                 i += 1 + sym.NumberOfAuxSymbols;
             }
 
@@ -366,37 +390,65 @@ namespace RemoteLoader
             foreach (var sec in coff.Sections)
             {
                 int size = Math.Max(sec.SizeOfRawData, sec.VirtualSize);
-                if (size == 0)
+                if (size <= 0)
                 {
                     sec.Base = IntPtr.Zero;
                     sec.AllocSize = 0;
+                    sec.FinalProtect = 0;
                     continue;
                 }
 
-                uint prot;
+                // Final protection, derived from the section characteristics. We
+                // do NOT allocate with this protection, because copying raw data
+                // (and later applying relocations) requires write access. Allocating
+                // RX/R sections and then Marshal.Copy'ing into them is what caused
+                // the unrecoverable 0x80131506 (access violation in Buffer.Memmove).
+                uint finalProt;
                 if (_opts.HonorSectionFlags)
                 {
                     bool exe = (sec.Characteristics & CoffFile.IMAGE_SCN_MEM_EXECUTE) != 0;
                     bool wr  = (sec.Characteristics & CoffFile.IMAGE_SCN_MEM_WRITE)  != 0;
-                    prot = exe ? (wr ? PAGE_EXECUTE_READWRITE : PAGE_EXECUTE_READ)
-                               : (wr ? PAGE_READWRITE         : PAGE_READONLY);
+                    finalProt = exe ? (wr ? PAGE_EXECUTE_READWRITE : PAGE_EXECUTE_READ)
+                                    : (wr ? PAGE_READWRITE         : PAGE_READONLY);
                 }
                 else
                 {
-                    prot = PAGE_EXECUTE_READWRITE;
+                    finalProt = PAGE_EXECUTE_READWRITE;
                 }
 
+                // Always reserve+commit as PAGE_READWRITE so the raw copy and the
+                // relocation writes succeed. We flip to finalProt (RX / R / RW / RWX)
+                // afterwards in ProtectSections(). This also means no region is ever
+                // left W+X during the mapping phase (only the non-HonorFlags test
+                // path ends at RWX).
                 int rounded = (size + 0xFFF) & ~0xFFF;
-                var p = Native.VirtualAlloc(IntPtr.Zero, (UIntPtr)rounded, MEM_COMMIT | MEM_RESERVE, prot);
+                var p = Native.VirtualAlloc(IntPtr.Zero, (UIntPtr)rounded, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
                 if (p == IntPtr.Zero)
                     throw new InvalidOperationException(
                         $"VirtualAlloc failed for section '{sec.Name}' (size=0x{size:X})");
                 _allocations.Add(p);
-                sec.Base      = p;
-                sec.AllocSize = rounded;
+                sec.Base         = p;
+                sec.AllocSize    = rounded;
+                sec.FinalProtect = finalProt;
 
                 if (sec.SizeOfRawData > 0)
                     Marshal.Copy(raw, sec.PointerToRawData, p, sec.SizeOfRawData);
+            }
+        }
+
+        // Flip every section from the temporary PAGE_READWRITE mapping to its
+        // real protection. Must run AFTER ApplyRelocations so the relocation
+        // sites (which live in read-only / execute sections like .text, .pdata)
+        // are still writable while being patched.
+        private void ProtectSections(CoffFile coff)
+        {
+            const uint PAGE_READWRITE = 0x04;
+            foreach (var sec in coff.Sections)
+            {
+                if (sec.Base == IntPtr.Zero || sec.AllocSize == 0) continue;
+                if (sec.FinalProtect == 0 || sec.FinalProtect == PAGE_READWRITE) continue; // already RW
+                if (!Native.VirtualProtect(sec.Base, (UIntPtr)sec.AllocSize, sec.FinalProtect, out _))
+                    _opts.Log?.Invoke($"BOF: VirtualProtect failed for '{sec.Name}' (target=0x{sec.FinalProtect:X})");
             }
         }
 
@@ -406,10 +458,18 @@ namespace RemoteLoader
             for (int i = 0; i < coff.Symbols.Length; i++)
             {
                 var sym = coff.Symbols[i];
+                if (sym == null) { addr[i] = IntPtr.Zero; continue; }
                 if (sym.SectionNumber == 0 && sym.StorageClass == CoffFile.IMAGE_SYM_CLASS_EXTERNAL)
                 {
-                    addr[i] = ResolveExternal(sym.Name);
-                    if (addr[i] == IntPtr.Zero)
+                    // BOF imports (__imp_<api>) are emitted as RIP-relative indirect
+                    // references: call/jmp/mov qword ptr [rip+disp]. The disp points at
+                    // the symbol, so the symbol must resolve to an 8-byte IAT *slot* that
+                    // holds the function pointer -- not the pointer itself. Resolving to
+                    // the raw pointer made the BOF read 8 bytes of the target prologue and
+                    // jump there -> STATUS_STACK_BUFFER_OVERRUN (0xC0000409).
+                    IntPtr fn = ResolveExternal(sym.Name);
+                    addr[i] = IatSlot(sym.Name, fn);
+                    if (fn == IntPtr.Zero)
                         _opts.Log?.Invoke($"BOF: unresolved symbol '{sym.Name}'");
                 }
                 else if (sym.SectionNumber == -1)
@@ -435,6 +495,11 @@ namespace RemoteLoader
             if (canon.StartsWith("__imp_", StringComparison.Ordinal)) canon = canon[6..];
             else if (canon.StartsWith("_", StringComparison.Ordinal))  canon = canon[1..];
 
+            // BOFs import Beacon APIs as e.g. "__imp_BeaconPrintf" while we register
+            // them under the bare "BeaconPrintf" name, so re-check the table with the
+            // de-mangled name before falling through to the dll$func path.
+            if (_api.TryGetValue(canon, out var cp)) return cp;
+
             int dollar = canon.IndexOf('$');
             if (dollar > 0)
             {
@@ -451,6 +516,26 @@ namespace RemoteLoader
             return IntPtr.Zero;
         }
 
+        // Allocate (and cache) an 8-byte IAT slot holding n, returning the slot
+        // address so __imp_<api> symbols resolve to a pointer slot the BOF can
+        // indirect through via call/jmp/mov qword ptr [rip+disp].
+        private IntPtr IatSlot(string name, IntPtr fn)
+        {
+            if (fn == IntPtr.Zero) return IntPtr.Zero;
+            if (_iat.TryGetValue(name, out var slot)) return slot;
+
+            const uint MEM_COMMIT = 0x1000, MEM_RESERVE = 0x2000, PAGE_READWRITE = 0x04;
+            slot = Native.VirtualAlloc(IntPtr.Zero, (UIntPtr)8, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+            if (slot == IntPtr.Zero)
+            {
+                _opts.Log?.Invoke($"BOF: IAT slot alloc failed for '{name}'");
+                return fn;
+            }
+            Marshal.WriteIntPtr(slot, fn);
+            _allocations.Add(slot);
+            _iat[name] = slot;
+            return slot;
+        }
         private void ApplyRelocations(CoffFile coff, byte[] raw, IntPtr[] symAddr)
         {
             for (int s = 0; s < coff.Sections.Length; s++)
@@ -483,8 +568,10 @@ namespace RemoteLoader
 
                 case CoffFile.IMAGE_REL_AMD64_ADDR64:
                 {
+                    // Additive: the 8-byte field holds the in-section offset
+                    // addend; fold in the resolved section base / target.
                     long* p = (long*)site;
-                    *p = target.ToInt64();
+                    *p = *p + target.ToInt64();
                     return;
                 }
 
@@ -511,10 +598,17 @@ namespace RemoteLoader
                 case CoffFile.IMAGE_REL_AMD64_REL32_4:
                 case CoffFile.IMAGE_REL_AMD64_REL32_5:
                 {
+                    // Additive, not absolute. The 4-byte field already holds the
+                    // target's offset within its section (the "addend" a real
+                    // linker folds in). Overwriting it collapsed every RIP-relative
+                    // data reference onto the section base: e.g. *every* BOF format
+                    // string resolved to the first .rdata entry, so all BeaconPrintf
+                    // output showed the wrong string. Call sites carry a 0 addend, so
+                    // 0 + x == x and indirect calls are unaffected.
                     int n = type - CoffFile.IMAGE_REL_AMD64_REL32;          // 0..5
                     int* p = (int*)((byte*)site + n);
                     long disp = target.ToInt64() - (site.ToInt64() + 4 + n);
-                    *p = (int)disp;
+                    *p = *p + (int)disp;
                     return;
                 }
 
@@ -539,6 +633,7 @@ namespace RemoteLoader
             for (int i = 0; i < coff.Symbols.Length; i++)
             {
                 var sym = coff.Symbols[i];
+                if (sym == null) continue;
                 if (!string.Equals(sym.Name, _opts.EntryPoint, StringComparison.Ordinal)) continue;
                 if (sym.SectionNumber <= 0 || sym.SectionNumber > coff.Sections.Length) continue;
                 var sec = coff.Sections[sym.SectionNumber - 1];
@@ -693,17 +788,140 @@ namespace RemoteLoader
         }
 
         // ── Beacon stubs ──────────────────────────────────────────────────
-        private void BPrintf(int type, IntPtr fmt)
+        private void BPrintf(int type, IntPtr fmt,
+            IntPtr a0, IntPtr a1, IntPtr a2, IntPtr a3,
+            IntPtr a4, IntPtr a5, IntPtr a6, IntPtr a7,
+            IntPtr a8, IntPtr a9, IntPtr a10, IntPtr a11,
+            IntPtr a12, IntPtr a13, IntPtr a14, IntPtr a15)
         {
-            // Cobalt-Strike BOFs call BeaconPrintf(type, "%s = %d\n", s, i) variadic.
-            // The C# side cannot easily walk the C stack; we forward the format
-            // string verbatim. BOFs that rely on this for fancy formatting will see
-            // literal %d/%s — same as the legacy loader. The format-string parser
-            // is a separate workstream.
+            // Cobalt-Strike BOFs call BeaconPrintf(type, "%s = %d\\n", s, i) variadic.
+            // On x64 the extra args land in R8/R9 then on the stack; declaring them on
+            // the delegate lets the CLR marshaler pull them in, so we expand the format
+            // string instead of printing it verbatim (which used to emit literal %lu).
             string s = Marshal.PtrToStringAnsi(fmt) ?? "";
-            lock (_writeLock) Console.Write(s);
+            var args = new IntPtr[16] { a0, a1, a2, a3, a4, a5, a6, a7,
+                                        a8, a9, a10, a11, a12, a13, a14, a15 };
+            string expanded = ExpandFormat(s, args);
+            lock (_writeLock) Console.Write(expanded);
         }
 
+        // Best-effort printf-style expander for the variadic Beacon format stubs.
+        // Width / precision / flags are consumed but not applied (BOF log output
+        // rarely depends on them). Integer args arrive in 64-bit slots; the length
+        // modifier decides whether we truncate to 32 bits. %s dereference is guarded
+        // so a bad pointer cannot take down the whole BOF run.
+        private static string ExpandFormat(string fmt, IntPtr[] args)
+        {
+            if (string.IsNullOrEmpty(fmt)) return "";
+            var sb = new StringBuilder(fmt.Length + 32);
+            int ai = 0;
+            for (int i = 0; i < fmt.Length; i++)
+            {
+                char c = fmt[i];
+                if (c != '%') { sb.Append(c); continue; }
+                int spec = i;
+                i++;
+                if (i >= fmt.Length) { sb.Append('%'); break; }
+                if (fmt[i] == '%') { sb.Append('%'); continue; }
+
+                // flags
+                while (i < fmt.Length && "-+ 0#".IndexOf(fmt[i]) >= 0) i++;
+                // width (a '*' consumes an int arg)
+                if (i < fmt.Length && fmt[i] == '*') { if (ai < args.Length) ai++; i++; }
+                else while (i < fmt.Length && fmt[i] >= '0' && fmt[i] <= '9') i++;
+                // precision (a '*' consumes an int arg)
+                if (i < fmt.Length && fmt[i] == '.')
+                {
+                    i++;
+                    if (i < fmt.Length && fmt[i] == '*') { if (ai < args.Length) ai++; i++; }
+                    else while (i < fmt.Length && fmt[i] >= '0' && fmt[i] <= '9') i++;
+                }
+                // length modifiers
+                bool isLong = false, isLongLong = false;
+                while (i < fmt.Length)
+                {
+                    char m = fmt[i];
+                    if (m == 'l') { if (isLong) isLongLong = true; isLong = true; i++; }
+                    else if (m == 'h') i++;                       // short/char: still a 32-bit slot
+                    else if (m == 'z' || m == 'j' || m == 't' || m == 'L' || m == 'I') { isLong = true; i++; }
+                    else break;
+                }
+                if (i >= fmt.Length) { sb.Append(fmt.AsSpan(spec)); break; }
+
+                char conv = fmt[i];
+                long lv = (ai < args.Length) ? args[ai].ToInt64() : 0;
+                switch (conv)
+                {
+                    case 's':
+                    case 'S':
+                    {
+                        IntPtr p = (ai < args.Length) ? args[ai] : IntPtr.Zero;
+                        if (ai < args.Length) ai++;
+                        if (p == IntPtr.Zero) sb.Append("(null)");
+                        else
+                        {
+                            try
+                            {
+                                sb.Append(conv == 'S'
+                                    ? (Marshal.PtrToStringUni(p) ?? "(null)")
+                                    : (Marshal.PtrToStringAnsi(p) ?? "(null)"));
+                            }
+                            catch
+                            {
+                                sb.Append("0x").Append(p.ToInt64().ToString("X"));
+                            }
+                        }
+                        break;
+                    }
+                    case 'c':
+                    {
+                        int v = (int)(lv & 0xFFFF);
+                        if (ai < args.Length) ai++;
+                        sb.Append((char)v);
+                        break;
+                    }
+                    case 'd': case 'i':
+                    {
+                        if (ai < args.Length) ai++;
+                        sb.Append((isLong || isLongLong) ? lv.ToString() : ((int)lv).ToString());
+                        break;
+                    }
+                    case 'u':
+                    {
+                        if (ai < args.Length) ai++;
+                        ulong uv = (ulong)lv;
+                        sb.Append((isLong || isLongLong) ? uv.ToString() : ((uint)uv).ToString());
+                        break;
+                    }
+                    case 'x': case 'X':
+                    {
+                        if (ai < args.Length) ai++;
+                        ulong uv = (ulong)lv;
+                        ulong mask = (isLong || isLongLong) ? uv : (uv & 0xFFFFFFFFu);
+                        sb.Append(mask.ToString(conv == 'X' ? "X" : "x"));
+                        break;
+                    }
+                    case 'p':
+                    {
+                        if (ai < args.Length) ai++;
+                        sb.Append("0x").Append(((ulong)lv).ToString("X"));
+                        break;
+                    }
+                    case 'o':
+                    {
+                        if (ai < args.Length) ai++;
+                        // octal is rare for BOF logging; fall back to decimal
+                        sb.Append((isLong || isLongLong) ? lv.ToString() : ((int)lv).ToString());
+                        break;
+                    }
+                    default:
+                        // Unknown conversion: emit verbatim, do not consume an arg.
+                        sb.Append('%').Append(conv);
+                        break;
+                }
+            }
+            return sb.ToString();
+        }
         private void BOutput(int type, IntPtr data, int len)
         {
             if (len <= 0 || data == IntPtr.Zero) return;
@@ -774,10 +992,19 @@ namespace RemoteLoader
             Buffer.MemoryCopy((void*)text, (void*)f->Buffer, f->Size - f->Length, len);
             f->Buffer += len; f->Length += len;
         }
-        private void BFmtPrintf(DataParser* f, IntPtr fmt)
+        private void BFmtPrintf(DataParser* f, IntPtr fmt,
+            IntPtr a0, IntPtr a1, IntPtr a2, IntPtr a3,
+            IntPtr a4, IntPtr a5, IntPtr a6, IntPtr a7,
+            IntPtr a8, IntPtr a9, IntPtr a10, IntPtr a11,
+            IntPtr a12, IntPtr a13, IntPtr a14, IntPtr a15)
         {
+            // BeaconFormatPrintf(format, fmt, ...) is variadic like BeaconPrintf;
+            // expand the format string before appending to the format buffer.
             string s = Marshal.PtrToStringAnsi(fmt) ?? "";
-            byte[] b = Encoding.ASCII.GetBytes(s);
+            var args = new IntPtr[16] { a0, a1, a2, a3, a4, a5, a6, a7,
+                                        a8, a9, a10, a11, a12, a13, a14, a15 };
+            string expanded = ExpandFormat(s, args);
+            byte[] b = Encoding.ASCII.GetBytes(expanded);
             fixed (byte* pb = b) BFmtAppend(f, (IntPtr)pb, b.Length);
         }
         private void BFmtInt(DataParser* f, int v)
@@ -828,7 +1055,9 @@ namespace RemoteLoader
             public int    Size;
         }
 
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void         D_Printf(int type, IntPtr fmt);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void D_Printf(int type, IntPtr fmt,
+            IntPtr a0, IntPtr a1, IntPtr a2, IntPtr a3, IntPtr a4, IntPtr a5, IntPtr a6, IntPtr a7,
+            IntPtr a8, IntPtr a9, IntPtr a10, IntPtr a11, IntPtr a12, IntPtr a13, IntPtr a14, IntPtr a15);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void         D_Output(int type, IntPtr data, int len);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void         D_DataParse(DataParser* p, IntPtr buf, int sz);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int          D_DataInt(DataParser* p);
@@ -840,7 +1069,9 @@ namespace RemoteLoader
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void         D_FmtReset(DataParser* f);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void         D_FmtFree(DataParser* f);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void         D_FmtAppend(DataParser* f, IntPtr text, int len);
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void         D_FmtPrintf(DataParser* f, IntPtr fmt);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void D_FmtPrintf(DataParser* f, IntPtr fmt,
+            IntPtr a0, IntPtr a1, IntPtr a2, IntPtr a3, IntPtr a4, IntPtr a5, IntPtr a6, IntPtr a7,
+            IntPtr a8, IntPtr a9, IntPtr a10, IntPtr a11, IntPtr a12, IntPtr a13, IntPtr a14, IntPtr a15);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void         D_FmtInt(DataParser* f, int value);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr       D_FmtToString(DataParser* f, IntPtr sz);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate byte         D_IsAdmin();
@@ -864,4 +1095,3 @@ namespace RemoteLoader
     }
 }
 
-// Replace this at the right place

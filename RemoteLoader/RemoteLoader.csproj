@@ -9,4 +9,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
-</Project>
+  <ItemGroup>
+    <!-- The evasion bypass is a SEPARATE assembly (AmsiBypass/). Keep it out of
+         the loader's compile so it ships as its own library to host remotely. -->
+    <Compile Remove="AmsiBypass\**" />
+    <None Remove="AmsiBypass\**" />
+    <EmbeddedResource Remove="AmsiBypass\**" />
+  </ItemGroup></Project>

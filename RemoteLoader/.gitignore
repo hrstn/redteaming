@@ -1,8 +1,18 @@
+﻿## .NET / C#   (covers RemoteLoader and the AmsiBypass companion project)
 bin/
 obj/
+publish/
 *.user
+*.suo
+*.pdb
+*.nupkg
+*.snupkg
 .vs/
-# Python
+# Legacy packages/ restore (Packages.config); harmless under PackageReference
+**/packages/*
+!**/packages/build/
+
+## Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -14,33 +24,37 @@ dist/
 build/
 .eggs/
 
-# Virtual environments
+## Virtual environments
 .venv/
 venv/
 env/
 
-# Scan outputs
+## Scan outputs
 *.json
 *.sarif
 *.html
 mcpray_session_*.jsonl
 
-# Logs
+## Logs
 *.log
 logs/
 
-# IDE
+## IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS
+## OS
 .DS_Store
 Thumbs.db
 
-# Testing
+## Testing
 .pytest_cache/
 .coverage
 htmlcov/
-
+TestResults/
+*.trx
+coverage/
+*.coverage
+*.coveragexml
