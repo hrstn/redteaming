@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
@@ -15,4 +15,15 @@
     <Compile Remove="AmsiBypass\**" />
     <None Remove="AmsiBypass\**" />
     <EmbeddedResource Remove="AmsiBypass\**" />
-  </ItemGroup></Project>
+    <!-- The xUnit test project is a separate solution member; never compile it
+         into the loader binary. -->
+    <Compile Remove="RemoteLoader.Tests\**" />
+    <None Remove="RemoteLoader.Tests\**" />
+    <EmbeddedResource Remove="RemoteLoader.Tests\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Let the test project reach the internal REPL (ArtifactCli). The
+         catalog/normalizer/resolver types are already public. -->
+    <InternalsVisibleTo Include="RemoteLoader.Tests" />
+  </ItemGroup>
+</Project>

