@@ -1,0 +1,25 @@
+# --- macOS ---
+.DS_Store
+**/.DS_Store
+
+# --- Claude Code (agent state / instructions — never commit to a public repo) ---
+.claude/
+**/.claude/
+CLAUDE.md
+**/CLAUDE.md
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# --- BOF build outputs (regenerable COFFs; per-suite _bin/) ---
+# NOTE: do NOT glob *.o here — several projects (C2-Tool-Collection,
+# BOFKatz, GodPotatoBOF) intentionally ship prebuilt .o COFFs.
+_bin/
