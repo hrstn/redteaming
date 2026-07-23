@@ -6,6 +6,7 @@ var metadata = {
 
 var path = ax.script_dir();
 ax.script_load(path + "askcreds.axs");
+ax.script_load(path + "icacls.axs");
 ax.script_load(path + "machineaccounts.axs");
 ax.script_load(path + "cve-2022-26923.axs");
 ax.script_load(path + "domaininfo.axs");
