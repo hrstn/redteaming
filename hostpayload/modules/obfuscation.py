@@ -331,8 +331,9 @@ def obfuscate_powershell(text: str, level: int = 3) -> str:
                             min_junk=1,
                             max_junk=min(level, 4))
 
-    print("  [*] Applying backticks...")
-    text = apply_backticks(text)
+    # NOTE: backtick-mangled cmdlets (Ne`w-Ob`ject) were intentionally removed –
+    # they are a well-known Defender obfuscation signature.  Plaintext cmdlet
+    # names attract far less attention than the backtick-split form.
 
     print("  [*] Randomizing indentation...")
     text = randomize_indentation(text, max_spaces=min(level + 1, 5))
