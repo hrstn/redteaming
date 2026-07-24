@@ -248,7 +248,7 @@ cmd_pth.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
 
 
 var group_lateral = ax.create_commands_group("LateralMovement-BOF", [cmd_jump, cmd_invoke, cmd_token, cmd_runas_user, cmd_runas_session, cmd_pth]);
-ax.register_commands_group(group_lateral, ["beacon", "gopher"], ["windows"], []);
+ax.register_commands_group(group_lateral, ["beacon", "gopher", "NoNameAx"], ["windows"], []);
 
 var group_lateral_x = ax.create_commands_group("LateralMovement-BOF-X", [cmd_jump, cmd_invoke, cmd_token_x, cmd_runas_user, cmd_runas_session, cmd_pth]);
 ax.register_commands_group(group_lateral_x, ["kharon"], ["windows"], []);
@@ -263,7 +263,7 @@ let token_steal_action = menu.create_action("Steal token", function(process_list
         ax.execute_command(proc.agent_id, "token steal " + proc.pid);
     }
 });
-menu.add_processbrowser(token_steal_action, ["beacon", "gopher"], ["windows"]);
+menu.add_processbrowser(token_steal_action, ["beacon", "gopher", "NoNameAx"], ["windows"]);
 
 let token_make_action = menu.create_action("Make token", function(agent_list) {
     if (agent_list.length > 0 ) {
@@ -320,7 +320,7 @@ let token_make_action = menu.create_action("Make token", function(agent_list) {
         }
     }
 });
-menu.add_session_access(token_make_action, ["beacon", "gopher"], ["windows"]);
+menu.add_session_access(token_make_action, ["beacon", "gopher", "NoNameAx"], ["windows"]);
 
 
 

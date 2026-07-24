@@ -1,0 +1,38 @@
+# Build artifacts
+build/
+src_beacon/build/
+src_beacon/include/Config_profile.h
+src_loader/bin/
+src_sleepmask/dist/
+
+# Go plugin binaries
+src_server/agent_nonameax/*.so
+src_server/listener_nonameax_http/*.so
+src_server/service_nax_store/*.so
+src_server/service_nax_store/dist/
+
+# PE wrapper build artifacts
+src_server/agent_nonameax/pe_templates/Shellcode.h
+
+# Evasion (P1/P2) notes
+# - P1 source files are TRACKED (committed, not generated):
+#     src_beacon/asm/Syscall.x64.asm
+#     src_beacon/include/Syscall.h
+#     src_beacon/src/Core/Syscall.c
+# - Debug PIC beacon outputs (beacon.x64.debug.*.bin/.exe, .pdata/.xdata) land
+#   under src_beacon/build/ (ignored above). The loader-wrapped payload is
+#   returned in-memory by the Adaptix BuildPayload plugin — nothing written to
+#   the repo tree.
+# - Config_sleepmask.h is a TRACKED seed (ships a default sleepmask BOF); the
+#   BuildPayload plugin regenerates it at payload-gen, so it shows as modified
+#   after generating a payload — `git checkout` it before committing unless you
+#   intend to ship the regenerated BOF. Config_profile.h is per-payload and
+#   fully generated (ignored above).
+
+# Runtime config
+nax_root.conf
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo

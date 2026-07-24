@@ -1,0 +1,124 @@
+{
+  "callbacks": [
+    {
+      "hosts": ["192.168.77.128"],
+      "user_agent": "Microsoft Office/16.0 (Windows NT 10.0; Microsoft Outlook 16.0.17928; Pro)",
+      "beacon_id_header": "X-MS-Correlation-Id",
+      "rotation": "random",
+
+      "server_error": {
+        "status": 403,
+        "body": "{\"error\":{\"code\":\"Authorization_RequestDenied\",\"message\":\"Insufficient privileges to complete the operation.\",\"innerError\":{\"date\":\"2024-12-01T00:00:00\",\"request-id\":\"00000000-0000-0000-0000-000000000000\",\"client-request-id\":\"00000000-0000-0000-0000-000000000000\"}}}",
+        "headers": {
+          "Content-Type": "application/json; charset=utf-8",
+          "Server": "Microsoft-IIS/10.0",
+          "X-Powered-By": "ASP.NET",
+          "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+          "X-Content-Type-Options": "nosniff"
+        }
+      },
+
+      "get": {
+        "uri": [
+          "/nax/v1.0/me/presence",
+          "/nax/v1.0/me/messages",
+          "/nax/v1.0/me/calendar/events",
+          "/nax/v1.0/me/drive/recent",
+          "/nax/beta/me/outlook/masterCategories"
+        ],
+        "client": {
+          "headers": {
+            "Accept": "application/json; odata.metadata=minimal",
+            "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.stub",
+            "X-AnchorMailbox": "user@contoso.com",
+            "client-request-id": "7f2e4b3a-1c9d-4e8f-b5a2-3d6c8e9f0a1b",
+            "Prefer": "outlook.body-content-type=\"text\""
+          },
+          "metadata": {
+            "format": "base64url",
+            "mask": true,
+            "placement": "parameter",
+            "name": "$filter",
+            "prepend": "",
+            "append": ""
+          },
+          "parameters": {
+            "$select": "availability,activity",
+            "$top": "25",
+            "api-version": "2024-01-01"
+          }
+        },
+        "server": {
+          "headers": {
+            "Content-Type": "application/json; odata.metadata=minimal; odata.streaming=true; IEEE754Compatible=false; charset=utf-8",
+            "Server": "Microsoft-IIS/10.0",
+            "X-Powered-By": "ASP.NET",
+            "OData-Version": "4.0",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private"
+          },
+          "output": {
+            "format": "base64",
+            "mask": true,
+            "placement": "body",
+            "name": "",
+            "prepend": "{\"@odata.context\":\"https://graph.microsoft.com/v1.0/$metadata#users('user%40contoso.com')/presence\",\"id\":\"fa8bf3dc-eebc-46e5-8a75-5a2c25c7e284\",\"availability\":\"Available\",\"activity\":\"Available\",\"outOfOfficeSettings\":{\"message\":\"\",\"isOutOfOffice\":false},\"statusMessage\":null,\"_telemetry\":\"",
+            "append": "\",\"_etag\":\"W/\\\"datetime'2024-12-01T00%3A00%3A00Z'\\\"\"}",
+            "empty_response": "{\"@odata.context\":\"https://graph.microsoft.com/v1.0/$metadata#users('user%40contoso.com')/presence\",\"id\":\"fa8bf3dc-eebc-46e5-8a75-5a2c25c7e284\",\"availability\":\"Available\",\"activity\":\"Available\"}"
+          }
+        }
+      },
+
+      "post": {
+        "uri": [
+          "/nax/v1.0/me/drive/items/root:/Documents/sync.tmp:/createUploadSession",
+          "/nax/v1.0/me/drive/items/root:/Documents/telemetry.dat:/content",
+          "/nax/v1.0/me/sendMail",
+          "/nax/beta/me/todo/lists/tasks"
+        ],
+        "client": {
+          "headers": {
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "application/json",
+            "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.stub",
+            "X-AnchorMailbox": "user@contoso.com",
+            "client-request-id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+          },
+          "metadata": {
+            "format": "hex",
+            "mask": false,
+            "placement": "cookie",
+            "name": "X-OD-SessionId",
+            "prepend": "",
+            "append": ""
+          },
+          "output": {
+            "format": "base64url",
+            "mask": true,
+            "placement": "body",
+            "name": "",
+            "prepend": "{\"@odata.type\":\"#microsoft.graph.uploadSession\",\"uploadUrl\":\"https://contoso-my.sharepoint.com/personal/user/_api/v2.0/drive/items/root:/sync.tmp:/uploadSession?guid=",
+            "append": "\",\"expirationDateTime\":\"2024-12-02T00:00:00.000Z\",\"nextExpectedRanges\":[\"0-\"]}"
+          }
+        },
+        "server": {
+          "headers": {
+            "Content-Type": "application/json; charset=utf-8",
+            "Server": "Microsoft-IIS/10.0",
+            "X-Powered-By": "ASP.NET",
+            "X-Content-Type-Options": "nosniff"
+          },
+          "output": {
+            "format": "base64",
+            "mask": true,
+            "placement": "body",
+            "name": "",
+            "prepend": "{\"@odata.type\":\"#microsoft.graph.driveItem\",\"id\":\"01BYE5RZ\",\"name\":\"sync.tmp\",\"size\":0,\"_sync\":\"",
+            "append": "\",\"lastModifiedDateTime\":\"2024-12-01T00:00:00Z\",\"file\":{\"mimeType\":\"application/octet-stream\"}}",
+            "empty_response": "{\"@odata.type\":\"#microsoft.graph.driveItem\",\"id\":\"01BYE5RZ\",\"name\":\"sync.tmp\",\"size\":0,\"lastModifiedDateTime\":\"2024-12-01T00:00:00Z\"}"
+          }
+        }
+      }
+    }
+  ]
+}

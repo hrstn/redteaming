@@ -66,6 +66,7 @@ Mapped every roadmap entry to what is now loaded:
 | mssqlTrust (3.3) | full MSSQL-BOF group (`mssql query`/`links`/`enablexp`/`xpcmd`/`olecmd`/`clr`/`smb`(xp_dirtree)/`impersonate`/`agentcmd`) | ✅kit — skip (far beyond plan) |
 | tokenImpersonate (4.1) | `token make`, `token steal`, `getsystem token`, `runas-user` + `findobj prochandle` | ✅kit — skip |
 | injectBOF (4.2) | Injection-BOF: `inject-cfg`, `inject-sec`, `inject-poolparty`, `inject-32to64` | ✅kit — skip |
+| pth (4.3) | — (`token make` / `runas-user` need **plaintext**; no hash→token primitive loaded) | ✅ done 2026-07-23 — built in Extension-Kit/LateralMovement-BOF (other home) |
 | adcsEnum (5.1) | `certi enum` (CAs + templates, ESC conditions) | ✅kit — skip |
 | adcsRequest (5.2) | `certi request`, `certi request_on_behalf` (ESC3) | ✅kit — skip |
 | s4u (5.3) | `kerbeus s4u`, `kerbeus cross_s4u` | ✅kit — skip |
@@ -169,6 +170,7 @@ abuse path, all without `netexec`/`sqlcmd`.
 |---|---|---|---|---|---|
 | 4.1 | **tokenImpersonate** — DuplicateTokenEx + ImpersonateLoggedOnUser | CRTL/OSEP | handle from FindProcHandle or PID | ◂ | ✅kit (`token make`/`steal`) |
 | 4.2 | **injectBOF** — APC / thread-hijack / CreateRemoteThread (bytes via addArgFile) | CRTL/OSEP | PID + shellcode file | ◂◂ | ✅kit (Injection-BOF `inject-*`) |
+| 4.3 | **pth** — Pass-the-Hash: make a token from an NT hash + optionally run a binary as that user (`LsaLogonUser`+`MSV1_0_LM20_LOGON`+NTLMv2; no lsass patch, CG-safe, admin-only, no SeTcb) | CRTL/OSEP | admin (SeImpersonate) + NT hash | ◂◂ | ✅ done 2026-07-23 (Extension-Kit/LateralMovement-BOF) |
 
 **Deliverable:** in-process execution + make-token-style pivot (no `runas`/`net use`/fork&run).
 **Verify:** DoD each; `tokenImpersonate` against a PID found via the existing
@@ -176,6 +178,12 @@ abuse path, all without `netexec`/`sqlcmd`.
 sacrificial `notepad` with a known-good calc/shellcode blob.
 **Note:** `injectBOF` overlaps Extension-Kit/Injection-BOF — this one exists so
 the Collection is self-contained; reuse techniques, don't copy the object.
+**Note (pth):** built in the **Extension-Kit** home (`LateralMovement-BOF/pth/`),
+not this Collection, because the loaded kit had no hash→token primitive —
+`token make` and `runas-user` both take plaintext. `pth` closes that gap: NT hash →
+network-logon token via `LsaLogonUser`+`MSV1_0_LM20_LOGON`+self-computed NTLMv2,
+then impersonate or `CreateProcessWithTokenW`. MITRE T1550.002. Details:
+`Extension-Kit/LateralMovement-BOF/pth/README.md`.
 
 ## Phase 5 — Roadmap / heavy (COM · RPC · ASN.1)
 
