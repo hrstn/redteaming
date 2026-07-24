@@ -1,0 +1,7 @@
+extender_type: "listener"
+extender_file: "listener_nonameax_smb.so"
+ax_file: "ax_config.axs"
+
+listener_name: "NoNameAxSMB"
+listener_type: "internal"
+protocol: "bind_smb"

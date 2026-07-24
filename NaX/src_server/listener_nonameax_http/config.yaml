@@ -1,0 +1,8 @@
+# NoNameAx HTTP listener config
+extender_type: "listener"
+extender_file: "listener_nonameax_http.so"
+ax_file: "ax_config.axs"
+
+listener_name: "NoNameAxHTTP"
+listener_type: "external"
+protocol: "http"

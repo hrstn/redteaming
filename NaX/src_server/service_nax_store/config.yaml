@@ -1,0 +1,6 @@
+extender_type: "service"
+extender_file: "nax_store.so"
+ax_file: "ax_config.axs"
+
+service_name: "nax_store"
+service_config: ""
