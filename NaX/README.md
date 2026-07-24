@@ -1,4 +1,4 @@
-# NoNameAx (NaX)
+# NoNameAx (NaX) THIS IS PORT OF [https://github.com/MaorSabag/NaX/](https://github.com/MaorSabag/NaX) full credits to MaorSabag
 
 Position-independent C2 beacon for the [Adaptix Framework](https://github.com/Adaptix-Framework/Adaptix) with module stomping, malleable C2 profiles, BOF execution, and a Stardust-pattern UDRL loader.
 
