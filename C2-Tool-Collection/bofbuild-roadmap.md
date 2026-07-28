@@ -32,7 +32,7 @@ Convention target: **this Collection** (`/mnt/e/hacking/redteaming/C2-Tool-Colle
 1. Compiles both arches (`make -C BOF-Sources/<Name>/SOURCE`).
 2. **Audit gate empty**: `x86_64-w64-mingw32-nm -u ../<name>.x64.o | awk '{print $2}' | grep -v '^__imp_'` prints nothing; same for x86. Only `__imp_*$` + `__imp_Beacon*` remain.
 3. Exports `go` (x64 ` T go`, x86 ` T go` — the Collection Makefile passes `-fno-leading-underscore` on x86, so there is NO leading underscore).
-4. `.axs` added in `adaptix-ported-scripts/` with `bof_pack` types matching `go()` arg order; registered `["beacon","gopher","kharon"],["windows"]`.
+4. `.axs` added in `adaptix-ported-scripts/` with `bof_pack` types matching `go()` arg order; registered `["beacon","gopher","NoNameAx"],["windows"]`.
 5. `.o` copied (capitalized) into `adaptix-ported-scripts/`.
 6. README stub (one-liner usage + the technique/cert/ATT&CK mapping) in the SOURCE dir.
 7. Append any new gotcha to `~/.claude/skills/bof-builder/LESSONS.md`.

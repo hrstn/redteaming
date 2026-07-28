@@ -15,4 +15,4 @@ cmd_petitpotam.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_petitpotam = ax.create_commands_group("PetitPotam-BOF", [cmd_petitpotam]);
-ax.register_commands_group(group_petitpotam, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_petitpotam, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

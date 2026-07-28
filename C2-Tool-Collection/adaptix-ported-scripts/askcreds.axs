@@ -19,4 +19,4 @@ cmd_askcreds.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_askcreds = ax.create_commands_group("Askcreds-BOF", [cmd_askcreds]);
-ax.register_commands_group(group_askcreds, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_askcreds, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

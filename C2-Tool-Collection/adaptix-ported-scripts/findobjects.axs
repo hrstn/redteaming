@@ -22,4 +22,4 @@ cmd_findmodule.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_findobjects = ax.create_commands_group("FindObjects-BOF", [cmd_findprochandle, cmd_findmodule]);
-ax.register_commands_group(group_findobjects, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_findobjects, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

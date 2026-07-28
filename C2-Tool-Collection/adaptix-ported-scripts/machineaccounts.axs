@@ -36,4 +36,4 @@ cmd_delmachine.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_machineaccounts = ax.create_commands_group("MachineAccounts-BOF", [cmd_getquota, cmd_addmachine, cmd_delmachine]);
-ax.register_commands_group(group_machineaccounts, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_machineaccounts, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

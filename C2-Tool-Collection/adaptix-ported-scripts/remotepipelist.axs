@@ -35,4 +35,4 @@ cmd_remotepipelist.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_remotepipelist = ax.create_commands_group("RemotePipeList", [cmd_remotepipelist]);
-ax.register_commands_group(group_remotepipelist, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_remotepipelist, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

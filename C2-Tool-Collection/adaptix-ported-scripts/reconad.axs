@@ -56,4 +56,4 @@ cmd_reconad_groups.addArgFlagString("-s", "server", "Optional DC server:port for
 cmd_reconad_groups.setPreHook(function (id, cmdline, parsed_json) { _reconad_hook("groups",    id, cmdline, parsed_json); });
 
 var group_reconad = ax.create_commands_group("ReconAD-BOF", [cmd_reconad, cmd_reconad_users, cmd_reconad_computers, cmd_reconad_groups]);
-ax.register_commands_group(group_reconad, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_reconad, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

@@ -17,4 +17,4 @@ cmd_kerbhash.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_kerbhash = ax.create_commands_group("KerbHash-BOF", [cmd_kerbhash]);
-ax.register_commands_group(group_kerbhash, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_kerbhash, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

@@ -49,4 +49,4 @@ cmd_rbcd.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_rbcd = ax.create_commands_group("RBCD-BOF", [cmd_rbcd]);
-ax.register_commands_group(group_rbcd, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_rbcd, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

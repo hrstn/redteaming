@@ -138,4 +138,4 @@ var cmd_certi = ax.create_command("certi", "ADCS BOF");
 cmd_certi.addSubCommands([ _cmd_certi_auth, _cmd_certi_enum, _cmd_certi_req, _cmd_certi_req_onbehalf, _cmd_certi_shadow ]);
 
 var group_adcs = ax.create_commands_group("ADCS-BOF", [cmd_certi]);
-ax.register_commands_group(group_adcs, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_adcs, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

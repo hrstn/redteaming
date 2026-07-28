@@ -10,4 +10,4 @@ cmd_psk.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_psk = ax.create_commands_group("Psk-BOF", [cmd_psk]);
-ax.register_commands_group(group_psk, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_psk, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

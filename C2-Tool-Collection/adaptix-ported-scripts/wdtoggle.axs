@@ -10,4 +10,4 @@ cmd_wdtoggle.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_wdtoggle = ax.create_commands_group("WdToggle-BOF", [cmd_wdtoggle]);
-ax.register_commands_group(group_wdtoggle, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_wdtoggle, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

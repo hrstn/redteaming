@@ -245,4 +245,4 @@ var group_aibof = ax.create_commands_group("AI-BOF", [
     cmd_tokenizerSwap, cmd_picklePlant, cmd_gitMine, cmd_vectorExport,
     cmd_sessionBrute
 ]);
-ax.register_commands_group(group_aibof, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_aibof, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

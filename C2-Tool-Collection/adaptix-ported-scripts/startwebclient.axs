@@ -10,4 +10,4 @@ cmd_startwebclient.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_startwebclient = ax.create_commands_group("StartWebClient-BOF", [cmd_startwebclient]);
-ax.register_commands_group(group_startwebclient, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_startwebclient, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

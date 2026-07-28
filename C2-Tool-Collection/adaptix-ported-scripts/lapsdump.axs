@@ -13,4 +13,4 @@ cmd_lapsdump.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_lapsdump = ax.create_commands_group("Lapsdump-BOF", [cmd_lapsdump]);
-ax.register_commands_group(group_lapsdump, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_lapsdump, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

@@ -10,4 +10,4 @@ cmd_psc.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_psc = ax.create_commands_group("Psc-BOF", [cmd_psc]);
-ax.register_commands_group(group_psc, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_psc, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

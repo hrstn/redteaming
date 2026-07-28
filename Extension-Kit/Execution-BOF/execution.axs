@@ -28,4 +28,4 @@ cmd_execute_assembly.setPreHook(function (id, cmdline, parsed_json, ...parsed_li
 });
 
 var group_exec = ax.create_commands_group("Execution-BOF", [cmd_execute_assembly, cmd_no_consolation]);
-ax.register_commands_group(group_exec, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_exec, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

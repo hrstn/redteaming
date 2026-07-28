@@ -397,6 +397,12 @@ typedef struct {
     BYTE           AsyncCount;
     BYTE           Initialized;
     BYTE           SmStompReq;
+    /* When a sync BOF (curJob==NULL) is redirected off the sync slot because the
+       sync slot is the beacon's own stomped home, this holds the async slot index
+       actually used (0..AsyncCount-1). 0xFF means "used the real SyncSlot".
+       StompProtect/StompPdata/StompFree read this so they touch the slot we
+       stomped, not the beacon home. */
+    BYTE           SyncStompSlotIdx;
 } BOF_STOMP_POOL;
 
 /* ========= [ BOF execution context ] ========= */
