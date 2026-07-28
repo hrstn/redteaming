@@ -23,4 +23,4 @@ cmd_klist.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_klist = ax.create_commands_group("Klist-BOF", [cmd_klist]);
-ax.register_commands_group(group_klist, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_klist, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

@@ -20,4 +20,4 @@ cmd_psxx.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_psx = ax.create_commands_group("Psx-BOF", [cmd_psx, cmd_psxx]);
-ax.register_commands_group(group_psx, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_psx, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

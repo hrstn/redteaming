@@ -485,7 +485,9 @@ FUNC INT NaxBofExecute( PNAX_INSTANCE Nax,
     NAX_JOB* curJob = NaxFindCurrentJob( Nax );
     NAX_BOF_CTX* stompCtx = curJob ? &curJob->BofCtx : &Nax->BofCtx;
     stompCtx->Stomped   = stomped ? 0x01 : 0x00;
-    stompCtx->StompSlot = stomped ? ( curJob ? curJob->StompSlotIdx : 0xFF ) : 0x00;
+    stompCtx->StompSlot = stomped ? ( curJob ? curJob->StompSlotIdx
+                                            : Nax->BofStompPool.SyncStompSlotIdx )
+                                 : 0x00;
 
     /* ---- 5. execute BOF ---- */
     if ( stomped && Nax->CfgEnabled ) {
@@ -493,7 +495,9 @@ FUNC INT NaxBofExecute( PNAX_INSTANCE Nax,
         if ( Nax->BofStompPool.SmStompReq )
             cfgSlot = &Nax->BofStompPool.SmSlot;
         else if ( curJob == NULL )
-            cfgSlot = &Nax->BofStompPool.SyncSlot;
+            cfgSlot = ( Nax->BofStompPool.SyncStompSlotIdx < Nax->BofStompPool.AsyncCount )
+                ? &Nax->BofStompPool.AsyncSlots[ Nax->BofStompPool.SyncStompSlotIdx ]
+                : &Nax->BofStompPool.SyncSlot;
         else if ( curJob->StompSlotIdx < Nax->BofStompPool.AsyncCount )
             cfgSlot = &Nax->BofStompPool.AsyncSlots[ curJob->StompSlotIdx ];
         if ( cfgSlot )

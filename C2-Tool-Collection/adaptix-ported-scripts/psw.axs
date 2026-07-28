@@ -10,4 +10,4 @@ cmd_psw.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_psw = ax.create_commands_group("Psw-BOF", [cmd_psw]);
-ax.register_commands_group(group_psw, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_psw, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

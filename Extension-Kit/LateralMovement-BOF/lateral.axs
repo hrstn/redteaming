@@ -251,7 +251,7 @@ var group_lateral = ax.create_commands_group("LateralMovement-BOF", [cmd_jump, c
 ax.register_commands_group(group_lateral, ["beacon", "gopher", "NoNameAx"], ["windows"], []);
 
 var group_lateral_x = ax.create_commands_group("LateralMovement-BOF-X", [cmd_jump, cmd_invoke, cmd_token_x, cmd_runas_user, cmd_runas_session, cmd_pth]);
-ax.register_commands_group(group_lateral_x, ["kharon"], ["windows"], []);
+ax.register_commands_group(group_lateral_x, ["NoNameAx"], ["windows"], []);
 
 
 

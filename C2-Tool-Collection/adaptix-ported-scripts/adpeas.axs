@@ -46,4 +46,4 @@ cmd_adpeas.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_adpeas = ax.create_commands_group("adPEAS-BOF", [cmd_adpeas]);
-ax.register_commands_group(group_adpeas, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_adpeas, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

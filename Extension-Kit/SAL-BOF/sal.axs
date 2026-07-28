@@ -178,4 +178,4 @@ cmd_osep_enum.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
 });
 
 var group_test = ax.create_commands_group("SAL-BOF", [cmd_arp, cmd_cacls, cmd_dir, cmd_env, cmd_ipconfig, cmd_listdns, cmd_netstat, cmd_nslookup, cmd_privcheck, cmd_routeprint, cmd_uptime, cmd_useridletime, cmd_whoami,cmd_osep_enum]);
-ax.register_commands_group(group_test, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_test, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

@@ -24,7 +24,7 @@ Requires `x86_64-w64-mingw32-gcc` / `i686-w64-mingw32-gcc` (mingw-w64).
 
 The loader `extension-kit.axs` already pulls in `AI-BOF/aibof.axs`. After
 rebuilding, re-import the extension kit in the client; the 15 commands below
-register for `beacon`, `gopher`, `kharon` on `windows`.
+register for `beacon`, `gopher`, `NoNameAx` on `windows`.
 
 ## Commands (course module → BOF → ATLAS)
 

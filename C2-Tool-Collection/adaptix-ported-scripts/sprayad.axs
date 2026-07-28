@@ -25,4 +25,4 @@ cmd_sprayad.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_sprayad = ax.create_commands_group("SprayAD-BOF", [cmd_sprayad]);
-ax.register_commands_group(group_sprayad, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_sprayad, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

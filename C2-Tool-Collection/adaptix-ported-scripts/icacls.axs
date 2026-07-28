@@ -17,4 +17,4 @@ cmd_icacls.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_icacls = ax.create_commands_group("Icacls-BOF", [cmd_icacls]);
-ax.register_commands_group(group_icacls, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_icacls, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

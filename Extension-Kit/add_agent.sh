@@ -2,7 +2,7 @@
 
 if [ -z "$1" ]; then
     echo "Use: $0 <agent_name>"
-    echo "Example: $0 kharon"
+    echo "Example: $0 NoNameAx"
     exit 1
 fi
 

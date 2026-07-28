@@ -22,4 +22,4 @@ cmd_kerberoast.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_kerberoast = ax.create_commands_group("Kerberoast-BOF", [cmd_kerberoast]);
-ax.register_commands_group(group_kerberoast, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_kerberoast, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

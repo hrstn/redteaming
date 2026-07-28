@@ -26,4 +26,4 @@ cmd_bofkatz.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var bofkatz_group = ax.create_commands_group("BOFKatz", [cmd_bofkatz]);
-ax.register_commands_group(bofkatz_group, ["beacon"], ["windows"], []);
+ax.register_commands_group(bofkatz_group, ["beacon","NoNameAx"], ["windows"], []);

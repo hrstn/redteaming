@@ -10,4 +10,4 @@ cmd_domaininfo.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_domaininfo = ax.create_commands_group("Domaininfo-BOF", [cmd_domaininfo]);
-ax.register_commands_group(group_domaininfo, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_domaininfo, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

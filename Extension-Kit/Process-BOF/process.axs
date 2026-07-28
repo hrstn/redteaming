@@ -76,4 +76,4 @@ var group_process = ax.create_commands_group("Process-BOF", [cmd_findobj, cmd_pr
 ax.register_commands_group(group_process, ["beacon", "gopher", "NoNameAx"], ["windows"], []);
 
 var group_process_x = ax.create_commands_group("Process-BOF-X", [cmd_findobj, cmd_process_x, cmd_procfreeze]);
-ax.register_commands_group(group_process_x, ["kharon"], ["windows"], []);
+ax.register_commands_group(group_process_x, ["NoNameAx"], ["windows"], []);

@@ -13,4 +13,4 @@ cmd_psm.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_psm = ax.create_commands_group("Psm-BOF", [cmd_psm]);
-ax.register_commands_group(group_psm, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_psm, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

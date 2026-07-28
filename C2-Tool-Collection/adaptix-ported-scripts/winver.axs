@@ -10,4 +10,4 @@ cmd_winver.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_winver = ax.create_commands_group("Winver-BOF", [cmd_winver]);
-ax.register_commands_group(group_winver, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_winver, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

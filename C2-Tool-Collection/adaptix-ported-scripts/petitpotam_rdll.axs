@@ -21,4 +21,4 @@ cmd_petitpotam_rdll.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var group_petitpotam_rdll = ax.create_commands_group("PetitPotam-RDLL", [cmd_petitpotam_rdll]);
-ax.register_commands_group(group_petitpotam_rdll, ["beacon", "gopher", "kharon"], ["windows"], []);
+ax.register_commands_group(group_petitpotam_rdll, ["beacon", "gopher", "NoNameAx"], ["windows"], []);
