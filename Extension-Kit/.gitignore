@@ -3,6 +3,8 @@ _bin
 .cache/jb
 SAL-BOF/vulndrivers.h
 Creds-BOF/nanodump/dist/
+# ABE hollow PIC stub — generated from abe_stub.c by `make` (xxd -i of the .bin)
+Creds-BOF/passwordKlepto/abe_stub_bin.*.h
 
 # macOS
 .DS_Store
