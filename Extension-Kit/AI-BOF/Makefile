@@ -17,7 +17,7 @@ CFLAGS = -I ../_include -I src -w -Wno-int-conversion -Wno-incompatible-pointer-
 # mininflate.c is #included by gitMine.c — NOT built standalone.
 BOFS = aiHunter credsMem credsLaunch envScraper aiSvcProbe shareWalk poisonStage \
        configDump logTail kubeHunter tokenizerSwap picklePlant gitMine \
-       vectorExport sessionBrute
+       vectorExport sessionBrute credVault
 
 OBJ64 = $(patsubst %,_bin/%.x64.o,$(BOFS))
 OBJ86 = $(patsubst %,_bin/%.x86.o,$(BOFS))
