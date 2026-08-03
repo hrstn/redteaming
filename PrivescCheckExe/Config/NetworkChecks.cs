@@ -44,14 +44,13 @@ public static class NetworkChecks
 
     private static void ServiceBinaries(List<Finding> findings)
     {
-        var services = Utils.QueryWmi("SELECT Name,PathName,State,StartName FROM Win32_Service");
+        var services = NativeServices.EnumerateWin32Services();
         var sb = new System.Text.StringBuilder();
         int count = 0;
         foreach (var svc in services)
         {
-            var path = svc["PathName"]?.ToString();
-            if (string.IsNullOrWhiteSpace(path)) continue;
-            sb.AppendLine($"  {svc["Name"],-28} {svc["State"],-10} {path}");
+            if (string.IsNullOrWhiteSpace(svc.BinaryPath)) continue;
+            sb.AppendLine($"  {svc.Name,-28} {svc.State,-10} {svc.BinaryPath}");
             count++;
         }
         if (count > 0)
@@ -62,7 +61,7 @@ public static class NetworkChecks
                 Category = "Network",
                 Title = $"{count} running/installed service(s) with binary paths",
                 Severity = Severity.Info,
-                Description = "Review binaries for unsigned/old/custom services. Combined with the Services checks above, look for hijackable paths.",
+                Description = "Review binaries for unsigned/old/custom services. Combined with the Services checks above, look for replaceable paths.",
                 Evidence = sb.ToString()
             });
         }

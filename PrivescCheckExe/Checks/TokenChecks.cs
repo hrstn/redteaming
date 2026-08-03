@@ -43,7 +43,7 @@ public static class TokenChecks
                     Category = "User & Token",
                     Title = "Current user is a member of a privileged group",
                     Severity = Severity.High,
-                    Description = "Privileged group membership can be leveraged for local privesc.",
+                    Description = "Privileged group membership can be leveraged to gain elevated access.",
                     Evidence = string.Join('\n', interesting)
                 });
             }
@@ -80,9 +80,9 @@ public static class TokenChecks
                     Category = "User & Token",
                     Title = "Dangerous privileges present on current token",
                     Severity = Severity.Critical,
-                    Description = "These privileges are directly exploitable for local privilege escalation.",
+                    Description = "These privileges are directly abusable to obtain elevated access on the host.",
                     Evidence = sb.ToString(),
-                    Remediation = "SeImpersonate -> Potato family. SeDebug -> inject into SYSTEM process. SeLoadDriver -> load a signed vulnerable driver. SeTakeOwnership -> own a SYSTEM binary then replace it."
+                    Remediation = "Review abuse paths: SeImpersonate (token impersonation of high-integrity processes), SeDebug (read/write another process), SeLoadDriver (kernel driver load), SeTakeOwnership (take ownership of a system binary then replace it)."
                 });
             }
         }

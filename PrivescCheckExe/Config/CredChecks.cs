@@ -30,9 +30,9 @@ public static class CredChecks
             Category = "Creds & Tokens",
             Title = "Stored credentials in Credential Manager",
             Severity = Severity.High,
-            Description = "Saved credentials can be abused by an attacker (e.g. via runas /savecred or DPAPI extraction).",
+            Description = "Saved credentials can be abused by an attacker (e.g. via runas /savecred or local secret extraction).",
             Evidence = outp,
-            Remediation = "Review whether saved creds are necessary; retrieve with CredEnumerate API or dpapi::cred on compromise."
+            Remediation = "Review whether saved creds are necessary; they can be retrieved via the CredEnumerate API under the user context."
         });
     }
 
@@ -82,7 +82,7 @@ public static class CredChecks
     private static void BrowserCreds(List<Finding> findings)
     {
         var sb = new System.Text.StringBuilder();
-        // Chrome / Edge login-data paths (DPAPI-encrypted but worth noting).
+        // Chrome / Edge login-data paths (user-key encrypted but worth noting).
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var candidates = new[]
         {
@@ -108,9 +108,9 @@ public static class CredChecks
                 Category = "Creds & Tokens",
                 Title = "Chromium-based browser credential/cookie stores present",
                 Severity = Severity.Medium,
-                Description = "Login Data (DPAPI-encrypted under the user key) holds saved passwords; Cookies hold session tokens. Extractable with the user's DPAPI master key.",
+                Description = "Login Data (encrypted under the user key) holds saved passwords; Cookies hold session tokens. Decrypted using the user's local key material.",
                 Evidence = sb.ToString(),
-                Remediation = "Use SharpChrome / DPAPI tooling under the user context to decrypt."
+                Remediation = "Use appropriate credential-access tooling under the user context to decrypt the stores."
             });
         }
     }

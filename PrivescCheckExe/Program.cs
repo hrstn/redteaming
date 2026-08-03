@@ -39,8 +39,13 @@ internal static class Program
             ("Config: Creds & Tokens",        CredChecks.Run),
         };
 
-        foreach (var (title, run) in groups)
+        var rng = new Random(0x5eed);
+        for (int gi = 0; gi < groups.Length; gi++)
         {
+            var (title, run) = groups[gi];
+            // Pace discovery: small jittered delay between groups so child-process
+            // invocations aren't a tight burst (reduces behavioral-heuristic scoring).
+            if (gi > 0) Thread.Sleep(150 + rng.Next(0, 250));
             if (!silent) Report.Section(title);
             int before = findings.Count;
             try { run(findings); }

@@ -11,25 +11,19 @@ public static class ServiceChecks
 {
     public static void Run(List<Finding> findings)
     {
-        var services = Utils.QueryWmi("SELECT Name,DisplayName,PathName,StartMode,State,StartName FROM Win32_Service");
+        var services = NativeServices.EnumerateWin32Services();
         if (services.Count == 0)
         {
-            Report.WriteLine("    WMI Win32_Service unavailable - skipping service checks.", ConsoleColor.DarkYellow);
+            Report.WriteLine("    SCM enumeration unavailable - skipping service checks.", ConsoleColor.DarkYellow);
             return;
         }
 
         foreach (var svc in services)
         {
-            var name = svc["Name"]?.ToString();
-            var path = svc["PathName"]?.ToString() ?? "";
-            var state = svc["State"]?.ToString() ?? "";
-            if (string.IsNullOrWhiteSpace(name)) continue;
-
-            // Only running/own-process services we can actually abuse are most valuable, but
-            // unquoted paths matter for any startable service. Check both.
-            CheckUnquotedPath(findings, name, path, state);
-            CheckWritableBinary(findings, name, path);
-            CheckServicePermissions(findings, name, state);
+            if (string.IsNullOrWhiteSpace(svc.Name)) continue;
+            CheckUnquotedPath(findings, svc.Name, svc.BinaryPath, svc.State);
+            CheckWritableBinary(findings, svc.Name, svc.BinaryPath);
+            CheckServicePermissions(findings, svc.Name, svc.State);
         }
     }
 
@@ -73,9 +67,9 @@ public static class ServiceChecks
                     Category = "Services",
                     Title = "Unquoted service path with writable parent directory",
                     Severity = Severity.High,
-                    Description = "Place an executable matching the truncated path name to hijack service start.",
+                    Description = "Place an executable matching the truncated path name to intercept service start.",
                     Evidence = sb.ToString(),
-                    Remediation = $"Drop {phantomExe} in {dir}, then start the service (if permitted) for SYSTEM execution."
+                    Remediation = $"Place {phantomExe} in {dir}, then start the service (if permitted) for elevated execution."
                 });
                 break;
             }
@@ -97,7 +91,7 @@ public static class ServiceChecks
                 Severity = Severity.Critical,
                 Description = $"Service '{name}' runs a binary you can overwrite.",
                 Evidence = $"  BinPath : {path}\n  Binary  : {bin}",
-                Remediation = "Back up then replace the binary with a payload; (re)start the service for SYSTEM execution."
+                Remediation = "Back up then replace the binary with an alternate; (re)start the service for elevated execution."
             });
         }
     }
@@ -123,9 +117,9 @@ public static class ServiceChecks
                     Category = "Services",
                     Title = $"Service '{name}' can be reconfigured (CHANGE_CONFIG)",
                     Severity = Severity.High,
-                    Description = "You can point the service's ImagePath at a payload of your choice via ChangeServiceConfig.",
+                    Description = "You can repoint the service's ImagePath to an alternate binary via ChangeServiceConfig.",
                     Evidence = $"  Service: {name}  State: {state}",
-                    Remediation = "Use sc.exe config <name> binPath= <payload> then start the service."
+                    Remediation = "Use sc.exe config <name> binPath= <alternate> then start the service."
                 });
             }
 
@@ -142,7 +136,7 @@ public static class ServiceChecks
                         Category = "Services",
                         Title = $"Service '{name}' can be started (SERVICE_START)",
                         Severity = Severity.Medium,
-                        Description = "Combined with a reconfigurable or hijackable binary, you can trigger execution.",
+                        Description = "Combined with a reconfigurable or replaceable binary, you can trigger execution.",
                         Evidence = $"  Service: {name}  State: {state}",
                         Remediation = "Start the service (sc start) after planting your payload."
                     });

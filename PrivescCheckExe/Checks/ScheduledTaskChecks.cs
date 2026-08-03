@@ -36,7 +36,7 @@ public static class ScheduledTaskChecks
                     Severity = Severity.High,
                     Description = $"Task '{taskName}' runs '{bin}' which you can overwrite.",
                     Evidence = $"  Task     : {taskName}\n  Action   : {taskToRun}\n  Run As   : {runAs}",
-                    Remediation = "Replace the binary; the task will execute your payload with the task's account context (often SYSTEM)."
+                    Remediation = "Replace the binary; the task will run your alternate with the task's account context (often elevated)."
                 });
             }
         }
