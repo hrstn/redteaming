@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Management;
 using Microsoft.Win32;
 using PrivescCheckExe.Core;
 
@@ -19,27 +18,6 @@ public static class Utils
     }
 
     public static bool IsHighIntegrity() => IsAdmin();
-
-    /// <summary>Query WMI and return list of property dictionaries.</summary>
-    public static List<Dictionary<string, object?>> QueryWmi(string wql, string scope = null!)
-    {
-        var rows = new List<Dictionary<string, object?>>();
-        try
-        {
-            using var searcher = scope == null
-                ? new ManagementObjectSearcher(wql)
-                : new ManagementObjectSearcher(scope, wql);
-            foreach (ManagementObject mo in searcher.Get())
-            {
-                var row = new Dictionary<string, object?>();
-                foreach (PropertyData p in mo.Properties)
-                    row[p.Name] = p.Value;
-                rows.Add(row);
-            }
-        }
-        catch { /* WMI may be unavailable; swallow */ }
-        return rows;
-    }
 
     public static string? GetReg(RegistryHive hive, string path, string value) => GetRegHive(hive, path, value);
 

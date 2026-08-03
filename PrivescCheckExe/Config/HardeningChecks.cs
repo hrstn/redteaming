@@ -82,44 +82,31 @@ public static class HardeningChecks
 
     private static void Defender(List<Finding> findings)
     {
-        // Real-time protection state lives in registry + WMI. Prefer WMI namespace ROOT\Microsoft\Windows\Defender.
-        bool realTimeOn = false;
-        bool antiSpyOn = false;
-        try
-        {
-            var rows = Utils.QueryWmi("SELECT RealTimeProtectionEnabled,AntivirusEnabled,AntispywareEnabled FROM MSFT_MpComputerStatus",
-                @"\\.\ROOT\Microsoft\Windows\Defender");
-            if (rows.Count > 0)
-            {
-                realTimeOn = Convert.ToBoolean(rows[0]["RealTimeProtectionEnabled"]);
-                antiSpyOn  = Convert.ToBoolean(rows[0]["AntispywareEnabled"]);
-            }
-        }
-        catch { }
+        // Real-time / anti-spyware state via registry (no WMI -> AOT-friendly).
         var disableRt = Utils.GetRegHive(RegistryHive.LocalMachine,
             @"SOFTWARE\Microsoft\Windows Defender\Real-Time Protection", "DisableRealtimeMonitoring");
+        var disableRtDword = Utils.GetRegHive(RegistryHive.LocalMachine,
+            @"SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection", "DisableRealtimeMonitoring");
         var disableAntiSpy = Utils.GetRegHive(RegistryHive.LocalMachine,
             @"SOFTWARE\Microsoft\Windows Defender", "DisableAntiSpyware");
+        var disableAntiSpyPol = Utils.GetRegHive(RegistryHive.LocalMachine,
+            @"SOFTWARE\Policies\Microsoft\Windows Defender", "DisableAntiSpyware");
 
-        if (!realTimeOn || disableRt == "1")
-        {
-            findings.Add(new Finding
-            {
-                Id = "CFG-HARD-003",
-                Category = "Hardening",
-                Title = "Defender real-time protection is disabled",
-                Severity = Severity.Medium,
-                Description = "Malware/tooling executes without immediate on-disk scanning - lower detection risk for offensive tooling but also a misconfig to flag to the client.",
-                Evidence = $"  DisableRealtimeMonitoring: {disableRt}\n  RealTimeProtectionEnabled  : {realTimeOn}",
-                Remediation = "Re-enable real-time monitoring unless intentionally disabled for sanctioned testing."
-            });
-        }
-        else
-        {
-            findings.Add(new Finding { Id = "CFG-HARD-003", Category = "Hardening", Title = "Defender real-time protection is ON", Severity = Severity.Info });
-        }
+        bool rtOff = disableRt == "1" || disableRtDword == "1";
+        bool spyOff = disableAntiSpy == "1" || disableAntiSpyPol == "1";
 
-        if (disableAntiSpy == "1" || !antiSpyOn)
+        findings.Add(new Finding
+        {
+            Id = "CFG-HARD-003",
+            Category = "Hardening",
+            Title = rtOff ? "Defender real-time protection is disabled" : "Defender real-time protection is ON",
+            Severity = rtOff ? Severity.Medium : Severity.Info,
+            Description = rtOff ? "On-access scanning is off - files execute without immediate scanning." : "",
+            Evidence = $"  DisableRealtimeMonitoring (reg)  : {disableRt ?? "(unset)"}\n  DisableRealtimeMonitoring (policy): {disableRtDword ?? "(unset)"}",
+            Remediation = rtOff ? "Re-enable real-time monitoring unless intentionally disabled for sanctioned testing." : ""
+        });
+
+        if (spyOff)
         {
             findings.Add(new Finding
             {
@@ -127,7 +114,7 @@ public static class HardeningChecks
                 Category = "Hardening",
                 Title = "Defender / anti-spyware engine appears disabled",
                 Severity = Severity.Medium,
-                Evidence = $"  DisableAntiSpyware: {disableAntiSpy}\n  AntispywareEnabled : {antiSpyOn}"
+                Evidence = $"  DisableAntiSpyware (reg)   : {disableAntiSpy ?? "(unset)"}\n  DisableAntiSpyware (policy): {disableAntiSpyPol ?? "(unset)"}"
             });
         }
     }
@@ -144,7 +131,7 @@ public static class HardeningChecks
                 Category = "Hardening",
                 Title = "No Attack Surface Reduction (ASR) rules configured",
                 Severity = Severity.Medium,
-                Description = "ASR blocks common lolbins/Office macro execution paths. Absence raises phishing/macro-driven privesc risk."
+                Description = "ASR blocks common lolbins/Office macro execution paths. Absence raises phishing/macro-driven escalation risk."
             });
             return;
         }

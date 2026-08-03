@@ -60,31 +60,66 @@ public static class SoftwareChecks
 
     private static void MissingPatches(List<Finding> findings)
     {
-        var hotfixes = Utils.QueryWmi("SELECT HotFixID,InstalledOn FROM Win32_QuickFixEngineering");
-        if (hotfixes.Count == 0)
+        // No WMI (AOT-friendly). Read legacy HotFix key + CBS RollupFix packages.
+        var sb = new System.Text.StringBuilder();
+        var ids = new System.Collections.Generic.HashSet<string>();
+
+        // Legacy: HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\HotFix\<KBxxxxxx>
+        var legacySubs = Utils.GetRegSubKeys(RegistryHive.LocalMachine,
+            @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\HotFix");
+        if (legacySubs != null)
+        {
+            foreach (var sub in legacySubs)
+            {
+                if (ids.Add(sub))
+                    sb.AppendLine($"  {sub}");
+            }
+        }
+
+        // Modern: CBS packages whose name contains "RollupFix" (cumulative updates).
+        // Revision number encodes the build the CU corresponds to.
+        string? newest = null;
+        var cbsSubs = Utils.GetRegSubKeys(RegistryHive.LocalMachine,
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\Packages");
+        if (cbsSubs != null)
+        {
+            foreach (var sub in cbsSubs)
+            {
+                if (!sub.Contains("RollupFix", StringComparison.OrdinalIgnoreCase)) continue;
+                // package name tail like ...~amd64~~10.0.19045.5000
+                var parts = sub.Split('~');
+                if (parts.Length > 0)
+                {
+                    var ver = parts[^1];
+                    if (!string.IsNullOrWhiteSpace(ver)) newest = ver;
+                }
+            }
+            if (newest != null)
+                sb.AppendLine($"  Latest RollupFix build: {newest}");
+        }
+
+        if (sb.Length == 0)
         {
             findings.Add(new Finding
             {
-                Id = "SW-002",
+                Id = "SW-003",
                 Category = "Software",
-                Title = "Could not enumerate installed hotfixes (WMI failure)",
+                Title = "Could not enumerate installed updates from registry",
                 Severity = Severity.Info,
-                Description = "Verify patching state via wmic qfe or Get-HotFix."
+                Description = "CBS/HotFix keys not readable. Verify patching state via 'dism /online /get-packages' or wmic qfe."
             });
             return;
         }
-        var sb = new System.Text.StringBuilder();
-        foreach (var h in hotfixes)
-            sb.AppendLine($"  {h["HotFixID"]?.ToString(),-12}  installed {h["InstalledOn"]}");
+
         findings.Add(new Finding
         {
             Id = "SW-003",
             Category = "Software",
-            Title = $"{hotfixes.Count} hotfix(es) installed",
+            Title = $"{ids.Count} KB(s) + cumulative update info enumerated",
             Severity = Severity.Medium,
-            Description = "Compare against a recent build to identify missing security updates. Outdated hosts are candidates for known public exploits.",
+            Description = "Compare the latest RollupFix build against a current baseline to identify missing security updates. Outdated hosts are candidates for known public exploits.",
             Evidence = sb.ToString(),
-            Remediation = "Cross-reference HotFix IDs against Microsoft's patch catalog; identify the newest missing security rollup."
+            Remediation = "Cross-reference the RollupFix build/KBs against Microsoft's patch catalog; identify missing security rollups."
         });
     }
 

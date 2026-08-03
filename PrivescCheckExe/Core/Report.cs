@@ -18,14 +18,14 @@ public static class Report
         User = $"{Environment.UserDomainName}\\{Environment.UserName}";
         var dir = AppContext.BaseDirectory;
         var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        TxtPath = Path.Combine(dir, $"PrivescCheck_{Host}_{stamp}.txt");
-        CsvPath = Path.Combine(dir, $"PrivescCheck_{Host}_{stamp}.csv");
+        TxtPath = Path.Combine(dir, $"HostAudit_{Host}_{stamp}.txt");
+        CsvPath = Path.Combine(dir, $"HostAudit_{Host}_{stamp}.csv");
     }
 
     public static void Banner()
     {
         Console.WriteLine();
-        WriteLine("PrivescCheckExe  -  native C# privilege escalation & config audit", ConsoleColor.White);
+        WriteLine("HostAudit  -  host security & configuration audit", ConsoleColor.White);
         WriteLine($"Host: {Host}    User: {User}    Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}", ConsoleColor.DarkGray);
         WriteLine("For authorized pentest use only.", ConsoleColor.DarkGray);
         Console.WriteLine();
@@ -69,7 +69,7 @@ public static class Report
     public static void WriteFiles(List<Finding> findings)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("PrivescCheckExe - privilege escalation & configuration audit");
+        sb.AppendLine("HostAudit - host security & configuration audit");
         sb.AppendLine($"Host: {Host}  User: {User}  Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine();
         foreach (var f in findings)

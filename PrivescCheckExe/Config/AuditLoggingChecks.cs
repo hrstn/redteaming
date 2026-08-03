@@ -44,7 +44,7 @@ public static class AuditLoggingChecks
             Severity = enabled == 0 ? Severity.High : (enabled < total / 2 ? Severity.Medium : Severity.Low),
             Description = enabled == 0
                 ? "No advanced auditing configured - attacker actions leave minimal traces."
-                : "Review which subcategories are audited; privilege-use and logon auditing matter most for privesc detection.",
+                : "Review which subcategories are audited; privilege-use and logon auditing matter most for escalation detection.",
             Evidence = sb.ToString(),
             Remediation = "Enable at least Audit Logon, Audit Privilege Use, Audit Process Creation via GPO: Computer Config > Windows Settings > Advanced Audit Policy."
         });
@@ -71,7 +71,7 @@ public static class AuditLoggingChecks
             Severity = sbOff ? Severity.High : Severity.Info,
             Description = sbOff
                 ? "Without ScriptBlock/Module logging, malicious PowerShell is largely invisible to SOC. (Note: this is also good news for offensive use.)"
-                : "ScriptBlock logging will record de-obfuscated payloads - obfuscation won't hide intent.",
+                : "ScriptBlock logging records de-obfuscated script content - obfuscation won't hide intent.",
             Evidence = sb.ToString(),
             Remediation = sbOff ? "Set EnableScriptBlockLogging=1 at minimum." : ""
         });

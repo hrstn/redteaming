@@ -2,24 +2,24 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- NativeAOT requires a base TFM without -windows suffix -->
+    <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>PrivescCheckExe</AssemblyName>
+    <AssemblyName>HostAudit</AssemblyName>
     <RootNamespace>PrivescCheckExe</RootNamespace>
     <LangVersion>latest</LangVersion>
-    <!-- Self-contained single-file, no PowerShell / no AMSI surface -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
+
+    <!-- NativeAOT: produces a single true-native PE - no IL to reflectively
+         scan, no single-file temp-folder extraction, no managed assembly. -->
+    <PublishAot>true</PublishAot>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IlcOptimizationPreference>Size</IlcOptimizationPreference>
     <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-  </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="System.Management" Version="8.0.0" />
-  </ItemGroup>
+    <!-- Trim away everything we don't reference (AOT does this by default). -->
+    <TrimMode>full</TrimMode>
+  </PropertyGroup>
 
 </Project>

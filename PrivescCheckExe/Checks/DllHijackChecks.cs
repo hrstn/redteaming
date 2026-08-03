@@ -39,7 +39,7 @@ public static class DllHijackChecks
                 Severity = Severity.Medium,
                 Description = "A PATH entry writable by the current user enables DLL planting / executable shadowing for any process that resolves from PATH.",
                 Evidence = sb.ToString(),
-                Remediation = "Drop a trojan DLL (or shadowing exe) named to match a target process's search order."
+                Remediation = "Place a replacement library (or shadowing executable) named to match a target process's search order."
             });
         }
     }
