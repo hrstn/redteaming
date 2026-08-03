@@ -23,3 +23,59 @@ __pycache__/
 # NOTE: do NOT glob *.o here — several projects (C2-Tool-Collection,
 # BOFKatz, GodPotatoBOF) intentionally ship prebuilt .o COFFs.
 _bin/
+
+# --- .NET / Visual Studio (PrivescCheckExe, RemoteLoader, ...) ---
+# Build outputs (regenerable). .gitignore only affects UNTRACKED files, so any
+# already-committed bin/obj artifacts remain tracked — this just keeps new
+# build cruft out of the index.
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+[Pp]ublished/
+[Oo]ut/
+[Bb]uild/
+# Test / coverage results
+[Tt]est[Rr]esults/
+[Cc]overage/
+*.coverage
+*.coveragexml
+coverage*.xml
+coverage*.info
+# NuGet
+*.nupkg
+*.snupkg
+*.nuget.props
+*.nuget.targets
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+project.assets.json
+artifacts/
+# Rider / R# / Roslyn
+*.sln.docstates
+*.user
+*.suo
+*.userosscache
+*.userprefs
+*.rsuser
+*.ide.meta
+# Visual Studio per-user / temp
+.vs/
+*.tmp
+*.tmp_proj
+*.cache
+*.binlog
+*.tlog
+*.pidb
+*.svclog
+# Publish / single-file staging
+*.dll.config
+*.exe.config
+# .NET CLI temp
+*.swp
+*.bak
+*.orig
+# Blazor / web (harmless to include even if unused)
+wwwroot/dist/
+node_modules/
