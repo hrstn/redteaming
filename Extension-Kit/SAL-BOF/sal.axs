@@ -177,5 +177,15 @@ cmd_osep_enum.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
     ax.execute_alias(id, cmdline, `execute bof "${bof_path}"`, "BOF implementation: osep-enum");
 });
 
-var group_test = ax.create_commands_group("SAL-BOF", [cmd_arp, cmd_cacls, cmd_dir, cmd_env, cmd_ipconfig, cmd_listdns, cmd_netstat, cmd_nslookup, cmd_privcheck, cmd_routeprint, cmd_uptime, cmd_useridletime, cmd_whoami,cmd_osep_enum]);
+var cmd_osai_enum = ax.create_command(
+    "osai-enum",
+    "OSAI local-host enum: osep-enum (shares, interesting files, dirs, flags, listening ports, IIS write, sticky/PS history, services) + AI quick wins (system & defenses, AI/ML artifacts + config-secret scan, AI/ML listening services, SSH keys + env secrets)",
+    "osai-enum"
+);
+cmd_osai_enum.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
+    let bof_path = ax.script_dir() + "_bin/osai_enum." + ax.arch(id) + ".o";
+    ax.execute_alias(id, cmdline, `execute bof "${bof_path}"`, "BOF implementation: osai-enum");
+});
+
+var group_test = ax.create_commands_group("SAL-BOF", [cmd_arp, cmd_cacls, cmd_dir, cmd_env, cmd_ipconfig, cmd_listdns, cmd_netstat, cmd_nslookup, cmd_privcheck, cmd_routeprint, cmd_uptime, cmd_useridletime, cmd_whoami,cmd_osep_enum,cmd_osai_enum]);
 ax.register_commands_group(group_test, ["beacon", "gopher", "NoNameAx"], ["windows"], []);

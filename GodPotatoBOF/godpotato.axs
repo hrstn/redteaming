@@ -70,4 +70,4 @@ cmd_godpotato.setPreHook(function (id, cmdline, parsed_json) {
 });
 
 var godpotato_group = ax.create_commands_group("GodPotato", [cmd_godpotato]);
-ax.register_commands_group(godpotato_group, ["beacon"], ["windows"], []);
+ax.register_commands_group(godpotato_group,["beacon","NoNameAx"], ["windows"], []);

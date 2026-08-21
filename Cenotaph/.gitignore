@@ -1,0 +1,34 @@
+# Cenotaph — build artifacts & local-only files
+
+# Build outputs
+/build/
+*.o
+*.obj
+
+# Final linked binaries (rebuild with `make`)
+cenotaph.exe
+cenotaph-debug.exe
+
+# Packed beacon payload — NEVER commit. Cenotaph reads this as <exe-stem>.dat
+# at runtime; it is built from the NaX fork and staged on the target.
+*.dat
+nax.x64.bin
+*.bin
+
+# Local test payloads / scratch
+*.bin.bak
+*.dat.bak
+/test/
+/scratch/
+
+# Local development / design-history log — not part of the published tool doc
+docs/development.md
+
+# Editor / OS cruft
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode/
+.idea/
+.cache/
