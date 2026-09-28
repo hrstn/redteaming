@@ -31,36 +31,6 @@ and runs it on its own pool thread — the production NaX path, unchanged.
 
 ---
 
-## Why this design (and not the original proposal)
-
-Cenotaph was specified in a design doc that proposed, for an **Elastic** target:
-raw/direct `syscall` instructions, an `ntfs.sys` IRP walk, NTFS alternate-data-
-stream reads, `NtCreateSection` chunked allocation, a PE-header `ImageBase` jump
-trick, a custom RWX `.bss` via yasm, and UPX packing. **Every one of those is
-wrong for Elastic.** This section records why, so the choices are auditable.
-
-Elastic Defend (the CRTL/OSAI lane EDR) is **not** a userland-`ntdll`-hook EDR.
-It feeds on **kernel ETW-Threat-Intelligence** plus image/behavior analytics.
-That inverts the usual evasion playbook:
-
-| Proposed technique | Verdict vs Elastic | Why |
-|---|---|---|
-| Direct / raw `syscall` insn | **Rejected** | Elastic keys on the `syscall` RIP being outside `ntdll` → `image_indirect_call` fires rule `e7d63d66` (kill process). Indirect syscalls only bypass *userland* hooks, which Elastic doesn't use. Pure downside. Use ntdll's **own wrappers** (PEB-walked `Nt*` stubs). |
-| AMSI / ETW patch in-process | **Rejected** | Patches trip rule `3046168a`, and patching userland `EtwEventWrite` does **not** blind kernel ETW-TI. No benefit, active cost. |
-| `ntfs.sys` IRP walk / `NtCreateSection` / ADS reads | **Rejected** | Noisy kernel-surface primitives with zero payoff over a mundane userland file read. `CreateFileW`+`ReadFile` (PEB-walked) is invisible. |
-| PE-header `ImageBase` jump trick | **Rejected** | Gimmick with no Elastic-relevant signal; adds fragility. |
-| Custom RWX `.bss` via yasm | **Rejected** | Violates RW→RX memory discipline. RWX page transitions are themselves a signal. |
-| UPX packing | **Rejected** | High-entropy section + known unpacker stub = a signature/entropy beacon, and it breaks the mundane-IAT story. |
-
-**Net:** Cenotaph is smaller, simpler, and more Elastic-fit than the proposal —
-because most of the proposal was actively harmful against this EDR. The only
-"evasion" Cenotaph needs is the architectural evasion NaX already provides
-(module-stomping into image memory, `TppWorkerThread` start address, FNV1a PEB
-walk) plus a boring IAT. Source of truth for these verdicts: the fork's
-`stealthy-agentbuilder` LESSONS.md, "CRTL lane — Elastic Security fitness audit."
-
----
-
 ## Repository layout
 
 ```
@@ -125,20 +95,3 @@ The beacon's AES key / URL / profile are baked into `nax.x64.bin` by the NaX
 build; Cenotaph only launches it. Generate the beacon payload from the current
 Adaptix listener so the baked key matches the listener's `encrypt_key`.
 
----
-
-## Notes & limits
-
-- **Live run under Elastic Defend is pending.** The build is audit-clean and
-  disasm-verified, not yet executed on the OSAI/CRTL Win11 box. TODO: confirm
-  no `e7d63d66` / `3046168a` and that the beacon heartbeats with a
-  `TppWorkerThread` worker start address.
-- Cenotaph is a normal PE (not PIC shellcode), so it keeps a file-scope
-  `CEN_INSTANCE g_Inst` in `.bss` — no TLS egghunter, no PIC constraints. The
-  beacon itself stays PIC; only the host is a normal PE.
-- The `___chkstk_ms` no-op stub is a safety net for `CenotaphEntry`'s ~4.3 KB
-  stack frame (`WCHAR path[1100]`); safe on a 1 MB stack. Can be retired by
-  shrinking the path buffer below one page.
-- FNV1a `HashString` in `Utils.c` is copied **byte-for-byte** from NaX. The
-  `if(!*Ptr) ++Ptr;` (no `continue`) + `U_PTR(U_PTR(Ptr)-U_PTR(String))` tail is
-  load-bearing — a "cleaner" rewrite produces wrong hashes. Do not tidy it.
