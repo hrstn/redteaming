@@ -10,7 +10,7 @@
 
 CC      := x86_64-w64-mingw32-gcc
 NASM    := nasm
-OBJCOPY := objcopy
+OBJCOPY := x86_64-w64-mingw32-objcopy
 
 CFLAGS  := -Os -nostdlib -fPIC -fvisibility=hidden \
             -ffunction-sections -fno-omit-frame-pointer \
@@ -144,7 +144,7 @@ $(BUILD)/%.obj: %.c | $(BUILD)
 
 $(OUT_EXE): $(ASM_OBJS) $(C_OBJS) Linker.ld | $(BUILD)
 	$(CC) $(CFLAGS) -T Linker.ld \
-	    -Wl,--strip-all -Wl,--image-base,0x10000000 \
+	    -Wl,--strip-all -Wl,--image-base,0x00000000 \
 	    $(ASM_OBJS) $(C_OBJS) -o $@ \
 	    $(LINK_LIBS)
 
@@ -176,7 +176,7 @@ link: | $(BUILD)
 	else \
 	    $(CC) $(CFLAGS) -c src/Core/Config.c -o $(BUILD)/Config.obj; \
 	    $(CC) $(CFLAGS) -T Linker.ld \
-	        -Wl,--strip-all -Wl,--image-base,0x10000000 \
+	        -Wl,--strip-all -Wl,--image-base,0x00000000 \
 	        $(ASM_OBJS) $(C_OBJS) -o $(OUT_EXE) \
 	        $(LINK_LIBS); \
 	    $(OBJCOPY) --dump-section .text=$(OUT_BIN) $(OUT_EXE); \
@@ -248,7 +248,7 @@ $(BUILD)/%.dpic.obj: %.c | $(BUILD)
 
 $(DEBUG_PIC_EXE): $(ASM_OBJS) $(DEBUG_PIC_OBJS) Linker.ld | $(BUILD)
 	$(CC) $(DEBUG_PIC_CFLAGS) -T Linker.ld \
-	    -Wl,--image-base,0x10000000 \
+	    -Wl,--image-base,0x00000000 \
 	    $(ASM_OBJS) $(DEBUG_PIC_OBJS) -o $@ \
 	    $(LINK_LIBS)
 
@@ -280,7 +280,7 @@ debug-link: | $(BUILD)
 	else \
 	    $(CC) $(DEBUG_PIC_CFLAGS) -c src/Core/Config.c -o $(BUILD)/Config.dpic.obj; \
 	    $(CC) $(DEBUG_PIC_CFLAGS) -T Linker.ld \
-	        -Wl,--image-base,0x10000000 \
+	        -Wl,--image-base,0x00000000 \
 	        $(ASM_OBJS) $(DEBUG_PIC_OBJS) -o $(DEBUG_PIC_EXE) \
 	        $(LINK_LIBS); \
 	    $(OBJCOPY) --dump-section .text=$(DEBUG_PIC_BIN) $(DEBUG_PIC_EXE); \
