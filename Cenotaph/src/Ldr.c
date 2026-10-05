@@ -61,8 +61,11 @@ static FUNC PVOID LdrpFwdResolve( PCHAR FwdStr ) {
     for ( i = 0; i < PfxLen; i++ )
         DllNameW[ i ] = (WCHAR)FwdStr[ i ];
 
-    /* ".dll" as packed UTF-16LE */
-    *(UINT64*)( &DllNameW[ PfxLen ] ) = 0x006C006C0064002Eull;
+    /* ".dll" as UTF-16LE */
+    DllNameW[ PfxLen + 0 ] = L'.';
+    DllNameW[ PfxLen + 1 ] = L'd';
+    DllNameW[ PfxLen + 2 ] = L'l';
+    DllNameW[ PfxLen + 3 ] = L'l';
     DllNameW[ PfxLen + 4 ] = L'\0';
 
     if ( ! ( FwdMod = LdrModulePeb( HashString( DllNameW, ( PfxLen + 4 ) * 2 ) ) ) )

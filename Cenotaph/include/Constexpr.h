@@ -11,9 +11,9 @@
 
 #define HASH_STR( x ) ExprHashStringA( ( x ) )
 
-static constexpr ULONG ExprHashStringA( PCHAR String ) {
+static constexpr ULONG ExprHashStringA( const char* String ) {
     ULONG Hash = H_MAGIC_KEY;
-    CHAR  Char = 0;
+    char  Char = 0;
 
     if ( ! String )
         return 0;

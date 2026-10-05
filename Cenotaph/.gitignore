@@ -21,6 +21,12 @@ nax.x64.bin
 /test/
 /scratch/
 
+# Real generated keys (CenKey.h ships as a placeholder all-zero key so the repo
+# builds out of the box; `make key` overwrites it with an obfuscated real key
+# before staging. If you ever generate a real CenKey.h locally and want to be
+# absolutely sure it cannot be committed, uncomment the next line.)
+# include/CenKey.h
+
 # Local development / design-history log — not part of the published tool doc
 docs/development.md
 
