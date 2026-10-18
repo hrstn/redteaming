@@ -22,6 +22,5 @@ FUNC BOOL NaxScInit( PINSTANCE Inst );
 FUNC BOOL NaxScResolve( PINSTANCE Inst, ULONG Hash, PNAX_SYSCALL Out );
 FUNC DWORD NaxHellsGate( PBYTE Stub );
 FUNC DWORD NaxHalosGate( PVOID CleanNtdll, ULONG TargetHash );
-FUNC PVOID NaxFindSyscallGadget( PVOID CleanNtdll );
 
 #endif // NAX_ADV_SYSCALL_H

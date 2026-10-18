@@ -15,7 +15,7 @@ typedef struct _BUFFER {
 #define H_MAGIC_PRIME     0x01000193
 #define H_MODULE_NTDLL    0x318a7963
 #define H_MODULE_KERNEL32 0x04a1a06a
-#define H_MODULE_KERNELBASE 0x2e85a006
+#define H_MODULE_KERNELBASE 0xe9914f7a
 
 //
 // NaxHeader v2 (compatible with original NaX)

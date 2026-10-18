@@ -86,62 +86,18 @@ typedef struct _PEB {
     SIZE_T                  MinimumStackCommit;
 } PEB, *PPEB;
 
+/* Offset-guaranteed TEB.  Only ProcessEnvironmentBlock (0x60) and TlsSlots
+ * (0x1480) are read by the loader; the untouched span matches mingw's
+ * winternl.h _TEB exactly (12 ptr headers / 399 ptr reserved / 1952 bytes).
+ * A hand-enumerated x64 TEB here previously put TlsSlots ~0x2D0 too low,
+ * so the TLS egg never resolved and Instance() returned NULL. */
 typedef struct _TEB {
-    NT_TIB                  NtTib;
-    PVOID                   EnvironmentPointer;
-    CLIENT_ID               ClientId;
-    PVOID                   ActiveRpcHandle;
-    PVOID                   ThreadLocalStoragePointer;
-    PPEB                    ProcessEnvironmentBlock;
-    ULONG                   LastErrorValue;
-    ULONG                   CountOfOwnedCriticalSections;
-    PVOID                   CsrClientThread;
-    PVOID                   Win32ThreadInfo;
-    ULONG                   User32Reserved[26];
-    ULONG                   UserReserved[5];
-    PVOID                   WOW32Reserved;
-    LCID                    CurrentLocale;
-    ULONG                   FpSoftwareStatusRegister;
-    PVOID                   SystemReserved1[54];
-    LONG                    ExceptionCode;
-    PVOID                   ActivationContextStackPointer;
-    UCHAR                   SpareBytes1[0x30 - sizeof(ULONG)];
-    ULONG                   TxFsContext;
-    PVOID                   GdiTebBatch[0x200/sizeof(PVOID)];
-    CLIENT_ID               RealClientId;
-    PVOID                   GdiCachedProcessHandle;
-    ULONG                   GdiClientPID;
-    ULONG                   GdiClientTID;
-    PVOID                   GdiThreadLocalInfo;
-    SIZE_T                  Win32ClientInfo[62];
-    PVOID                   glDispatchTable[233];
-    SIZE_T                  glReserved1[29];
-    PVOID                   glReserved2;
-    PVOID                   glSectionInfo;
-    PVOID                   glSection;
-    PVOID                   glTable;
-    PVOID                   glCurrentRC;
-    PVOID                   glContext;
-    ULONG                   LastStatusValue;
-    UNICODE_STRING          StaticUnicodeString;
-    WCHAR                   StaticUnicodeBuffer[261];
-    PVOID                   DeallocationStack;
-    PVOID                   TlsSlots[64];
-    LIST_ENTRY              TlsLinks;
-    PVOID                   Vdm;
-    PVOID                   ReservedForNtRpc;
-    PVOID                   DbgSsReserved[2];
-    ULONG                   HardErrorMode;
-    PVOID                   Instrumentation[9];
-    GUID                    ActivityId;
-    PVOID                   SubProcessTag;
-    PVOID                   EtwLocalData;
-    PVOID                   EtwTraceData;
-    PVOID                   WinSockData;
-    ULONG                   GdiBatchCount;
-    ULONG                   IdealProcessorValue;
-    ULONG                   GuaranteedStackBytes;
-    PVOID                   ReservedForPerf;
+    NT_TIB                  NtTib;                     // 0x000
+    PVOID                   Pad5[5];                   // 0x038..0x060
+    PPEB                    ProcessEnvironmentBlock;   // 0x060
+    PVOID                   Reserved2[399];            // 0x068..0xCE0
+    BYTE                    Reserved3[1952];           // 0xCE0..0x1480
+    PVOID                   TlsSlots[64];              // 0x1480
 } TEB, *PTEB;
 
 typedef struct _OBJECT_ATTRIBUTES {
@@ -238,6 +194,9 @@ typedef PVOID (NTAPI *pRtlAllocateHeap)( PVOID, ULONG, SIZE_T );
 // Win32 wrappers (for non-sensitive use or fallback paths)
 BOOL WINAPI VirtualProtect( LPVOID lpAddress, SIZE_T dwSize, DWORD flNewProtect, PDWORD lpflOldProtect );
 typedef BOOL (WINAPI *pVirtualProtect)( LPVOID, SIZE_T, DWORD, PDWORD );
+
+LPVOID WINAPI VirtualAlloc( LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect );
+typedef LPVOID (WINAPI *pVirtualAlloc)( LPVOID, SIZE_T, DWORD, DWORD );
 
 HMODULE WINAPI LoadLibraryExW( LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags );
 typedef HMODULE (WINAPI *pLoadLibraryExW)( LPCWSTR, HANDLE, DWORD );

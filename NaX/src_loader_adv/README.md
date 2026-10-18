@@ -15,7 +15,7 @@ Target: Win11 24H2 / 2025-era EDR that hooks userland `Nt*` stubs and watches `L
 | Module stomp | `LoadLibraryExW(DONT_RESOLVE_DLL_REFERENCES)` — loader event | `LdrLoadDll` from clean ntdll or stomp an **already-loaded** DLL; optional manual file mapping |
 | Anti-debug / anti-VM | None | Quiet checks with graceful exit |
 | Stack spoofing | None | `NtContinue`-based stack pivot helper for sensitive calls |
-| Loader footprint | Left in memory | Self-wipe after beacon starts |
+| Loader footprint | Left in memory | Staged copy + header wiped at boot (loader stub code remains) |
 | Sleep obfuscation | Beacon sleepmask BOF | Loader can pre-stage Ekko-style waitable-timer APC obfuscation |
 
 ---
@@ -42,7 +42,7 @@ Target: Win11 24H2 / 2025-era EDR that hooks userland `Nt*` stubs and watches `L
               * NtAllocateVirtualMemory fallback            |
         - write beacon, fix .pdata/.xdata                   |
         - CFG whitelist                                     |
-        - wipe loader .text                                 |
+        - wipe staged copy + header (padded packs only)     |
         - execute via thread pool / CreateThread            |
 ```
 

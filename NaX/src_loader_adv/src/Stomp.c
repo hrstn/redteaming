@@ -82,6 +82,9 @@ FUNC PVOID NaxModuleStomp(
     SIZE_T ProtSize = 0;
     ULONG  OldProt  = 0;
 
+    if ( !SCAPI(NtProtectVirtualMemory).Stub )
+        return NULL;
+
     //
     // 1) Acquire the sacrificial DLL.
     //

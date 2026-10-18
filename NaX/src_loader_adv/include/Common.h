@@ -46,6 +46,7 @@ typedef struct _INSTANCE {
 
         // Win32 wrappers for non-sensitive use (fallback only)
         D_API( VirtualProtect )
+        D_API( VirtualAlloc )
         D_API( LoadLibraryExW )
         D_API( GetProcessMitigationPolicy )
         BOOL ( __stdcall *SetProcessValidCallTargets )( HANDLE, PVOID, SIZE_T, ULONG, PVOID );

