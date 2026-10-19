@@ -100,3 +100,8 @@ node_modules/
 # --- Stray built test binaries (sources tracked; rebuild with mingw) ---
 dpapi_credman.exe
 NaX/src_loader/scripts/*.exe
+
+# --- Working notes / planning docs (kept locally, never committed) ---
+REDTEAMING_AUDIT.md
+C2-Tool-Collection/BOF-IDEAS-*.md
+C2-Tool-Collection/*roadmap*.md

@@ -225,21 +225,13 @@ packer/dropper changed.
 
 ---
 
-## Roadmap
+## Capabilities and known gaps
 
-- [x] Directory skeleton and architecture README
-- [x] Self-contained C dropper template (`src/dropper_template.c`)
-- [x] ChaCha20 + HMAC-SHA256 crypto in the dropper
-- [x] PEB-based API resolver
-- [x] HTTPS fetch via WinHTTP (PEB-resolved)
-- [x] RW→RX allocation + NtCreateThreadEx execution
-- [x] Python `pack.py` CLI
-- [x] `scripts/validate.py` signature/behavior scan
-- [x] HTA delivery wrapper (`delivery/hta.py`)
-- [x] Crypto unit tests (`tests/test_crypto.py`)
-- [x] Build regression script (`scripts/build_all.py`)
-- [x] Benign test payload (`tests/test_benign.py`)
-- [x] VBA macro delivery wrapper (`delivery/vba.py`)
-- [x] ISO/LNK delivery wrapper (`delivery/iso_lnk.py`)
-- [x] Self-decrypting shellcode variant (`scripts/sc.py`)
-- [ ] Environmental or target-specific key derivation
+Every delivery path ships today: native droppers (embed + fetch), HTA / VBA /
+ISO-LNK wrappers, the self-decrypting shellcode variant, ChaCha20 + HMAC-SHA256
+crypto with PBKDF-style key handling, and the build/validate pipeline
+(`scripts/build_all.py`, `scripts/validate.py`) as merge gates.
+
+Known gap: payload keys are per-build embedded constants. Target-specific /
+environmental key derivation is designed but not implemented; treat the key
+handling as build-time binding only.
