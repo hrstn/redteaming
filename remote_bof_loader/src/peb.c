@@ -263,6 +263,21 @@ done:
 BOOL AntiCheck(void) {
     if (NtCurrentPeb()->BeingDebugged) return FALSE;
 
+    /* Kernel-debugger state: class 35 via the loader's own resolver (the
+     * caller's NT table isn't initialized yet) + KUSER_SHARED_DATA bit. */
+    {
+        pNtQuerySystemInformation qsi = NULL;
+        PVOID ntdll = LdrModule(H_NTDLL_DLL);
+        if (ntdll) qsi = (pNtQuerySystemInformation)LdrFunction(ntdll, H_NTQUERYSYSTEMINFORMATION);
+        if (qsi) {
+            struct { BOOLEAN Enabled; BOOLEAN NotPresent; } kd = { 0, 0 };
+            if (NT_SUCCESS(qsi(35, &kd, sizeof(kd), NULL)) && kd.Enabled)
+                return FALSE;
+        }
+    }
+    if (*(BYTE*)((ULONG_PTR)0x7FFE0000 + 0xBA))
+        return FALSE;
+
     PVOID k32 = LdrModule(H_KERNEL32_DLL);
     if (k32) {
         pGetSystemInfo gsi = (pGetSystemInfo)LdrFunction(k32, H_GETSYSTEMINFO);

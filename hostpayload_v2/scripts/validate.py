@@ -48,8 +48,11 @@ def scan_text(text: str) -> list[tuple[str, str]]:
     for pattern, description in SIGNATURES.items():
         if re.search(re.escape(pattern), text, re.IGNORECASE):
             hits.append((pattern, description))
+    # word-boundary regexes are false-positive prone on raw bytes, so run
+    # them over printable string excerpts only
+    strings = " ".join(re.findall(r"[ -~]{4,}", text))
     for pattern, description in REGEX_SIGNATURES.items():
-        if re.search(pattern, text, re.IGNORECASE):
+        if re.search(pattern, strings, re.IGNORECASE):
             hits.append((pattern, description))
     return hits
 
