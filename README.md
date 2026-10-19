@@ -21,6 +21,10 @@ Personal red-team toolkit. Two themes:
 | `OSEP-ENUM/` | BOF port of `OSEP_enum.ps1` — single-pass local host enum, no child processes / no PowerShell. |
 | `RemoteLoader/` | In-memory loader for .NET assemblies and x64 COFF/BOF objects, pulled over HTTPS from a GitHub repo (nothing touches disk). |
 | `hostpayload/` | AdaptixPowerShell — PowerShell payload obfuscator/encryptor (.exe ↔ shellcode via Donut, AMSI bypass). |
+| `NaX/` | Local fork of the AdaptixC2 framework: custom beacon (`src_beacon`), loaders (`src_loader`, `src_loader_adv`), sleepmask (`src_sleepmask`), and the Go server plugin (`src_server/agent_nonameax`). Architecture, build/deploy, and wire protocol live in `NaX/wiki/`. |
+| `Cenotaph/` | Zero-import disk host for NaX payloads: PEB-resolves its APIs, reads `<exe-stem>.dat` (ChaCha20 + HMAC-SHA256 blob), verifies + decrypts, RW→RX, hands off to the payload. `Cenotaph/README.md`. |
+| `hostpayload_v2/` | Hardened delivery-payload generator: drop-and-stomp droppers with decryptor shellcode, fetch mode, delivery wrappers (ISO/LNK/HTA), test harness + build gates. `hostpayload_v2/README.md`. |
+| `remote_bof_loader/` | Importless native x64 in-memory COFF/BOF loader (a PS1 cradle fetches the object, the loader BOF runs it). `remote_bof_loader/README.md`. |
 
 ## Extension-Kit (vendored)
 

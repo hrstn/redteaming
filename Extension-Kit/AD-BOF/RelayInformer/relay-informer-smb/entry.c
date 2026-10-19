@@ -1,7 +1,3 @@
-//
-// Claude to the rescue
-//
-
 #include "bofdefs.h"
 #include "base.c"
 
