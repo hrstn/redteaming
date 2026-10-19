@@ -1,117 +1,88 @@
 /*
- * Cenotaph — PEB walk + export-table resolution.
- * Adapted from NaX src_loader/src/Ldr.c (MIT, MaorSabag): same FNV1a
- * walk, same forwarded-export handling.  No API name strings — callers
- * pass FNV1a hashes (HASH_STR at compile time).
+ * Tiny PEB-walk module / export resolver.
  */
 #include "Cenotaph.h"
 
-/* resolve a loaded module base from the PEB InLoadOrderModuleList by hash */
-FUNC PVOID LdrModulePeb( ULONG Hash ) {
-    PCEN_LDR_DATA_TABLE_ENTRY Data  = NULL;
-    PLIST_ENTRY               Head  = NULL;
-    PLIST_ENTRY               Entry = NULL;
+extern "C" PVOID CenLdrModulePeb( ULONG Hash ) {
+    PCEN_PEB           peb = CenPeb();
+    PCEN_PEB_LDR_DATA  ldr = peb ? peb->Ldr : NULL;
+    PLIST_ENTRY        head = ldr ? &ldr->InLoadOrderModuleList : NULL;
+    PLIST_ENTRY        cur  = head ? head->Flink : NULL;
 
-    Head  = &CenPeb()->Ldr->InLoadOrderModuleList;
-    Entry = Head->Flink;
+    if ( ! peb || ! ldr || ! head || ! cur )
+        return NULL;
 
-    for ( ; Head != Entry ; Entry = Entry->Flink ) {
-        Data = (PCEN_LDR_DATA_TABLE_ENTRY) Entry;
-
-        if ( HashString( Data->BaseDllName.Buffer, Data->BaseDllName.Length ) == Hash )
-            return Data->DllBase;
+    while ( cur != head ) {
+        PCEN_LDR_DATA_TABLE_ENTRY ent = (PCEN_LDR_DATA_TABLE_ENTRY)cur;
+        if ( ent->BaseDllName.Buffer && ent->BaseDllName.Length ) {
+            if ( CenHashString( ent->BaseDllName.Buffer, ent->BaseDllName.Length ) == Hash )
+                return ent->DllBase;
+        }
+        cur = cur->Flink;
     }
     return NULL;
 }
 
-/* retrieve NT headers for an image base */
-static FUNC PIMAGE_NT_HEADERS LdrpImageHeader( PVOID Image ) {
-    PIMAGE_DOS_HEADER Dos = (PIMAGE_DOS_HEADER) Image;
-    PIMAGE_NT_HEADERS Nt  = NULL;
-
-    if ( Dos->e_magic != IMAGE_DOS_SIGNATURE )
-        return NULL;
-
-    Nt = (PIMAGE_NT_HEADERS)( U_PTR( Image ) + Dos->e_lfanew );
-    if ( Nt->Signature != IMAGE_NT_SIGNATURE )
-        return NULL;
-
-    return Nt;
-}
-
-/* forwarded export "Module.Function" -> resolve recursively */
-static FUNC PVOID LdrpFwdResolve( PCHAR FwdStr ) {
+/* Resolve a forwarded export ("KERNELBASE.CreateFileW"): split module
+ * prefix from function name, hash the prefix + ".dll" the same way the
+ * module walker hashes BaseDllName, then recurse.  Ordinal forwarding
+ * ("Module.#N") returns NULL. */
+static PVOID CenFwdResolve( PCHAR FwdStr ) {
     WCHAR DllNameW[ 64 ] = { 0 };
-    PCHAR DotPtr = NULL;
-    PCHAR FuncName = NULL;
-    PVOID FwdMod  = NULL;
-    INT   PfxLen  = 0;
-    INT   i       = 0;
+    PCHAR DotPtr = FwdStr;
+    PCHAR FuncName;
+    PVOID FwdMod;
+    INT   PfxLen, i;
 
-    DotPtr = FwdStr;
     while ( *DotPtr && *DotPtr != '.' ) DotPtr++;
     if ( ! *DotPtr ) return NULL;
-
     FuncName = DotPtr + 1;
     PfxLen   = (INT)( DotPtr - FwdStr );
     if ( PfxLen <= 0 || PfxLen > 59 ) return NULL;
+    if ( *FuncName == '#' ) return NULL;
 
-    if ( *FuncName == '#' ) return NULL;   /* ordinal forwarding: unsupported */
-
-    for ( i = 0; i < PfxLen; i++ )
-        DllNameW[ i ] = (WCHAR)FwdStr[ i ];
-
-    /* ".dll" as UTF-16LE */
-    DllNameW[ PfxLen + 0 ] = L'.';
-    DllNameW[ PfxLen + 1 ] = L'd';
-    DllNameW[ PfxLen + 2 ] = L'l';
-    DllNameW[ PfxLen + 3 ] = L'l';
+    for ( i = 0; i < PfxLen; i++ ) DllNameW[i] = (WCHAR)FwdStr[i];
+    *(UINT64 *)( &DllNameW[ PfxLen ] ) = 0x006C006C0064002Eull;   /* ".dll" UTF-16LE */
     DllNameW[ PfxLen + 4 ] = L'\0';
 
-    if ( ! ( FwdMod = LdrModulePeb( HashString( DllNameW, ( PfxLen + 4 ) * 2 ) ) ) )
-        return NULL;
-
-    return LdrFunction( FwdMod, HashString( FuncName, 0 ) );
+    FwdMod = CenLdrModulePeb( CenHashString( DllNameW, ( PfxLen + 4 ) * 2 ) );
+    if ( ! FwdMod ) return NULL;
+    return CenLdrFunction( FwdMod, CenHashString( FuncName, 0 ) );
 }
 
-/* resolve a function pointer by FNV1a hash from a module's export table */
-FUNC PVOID LdrFunction( PVOID Library, ULONG Function ) {
-    PVOID                   Address    = NULL;
-    PIMAGE_NT_HEADERS       Nt         = NULL;
-    PIMAGE_EXPORT_DIRECTORY ExpDir     = NULL;
-    SIZE_T                  ExpDirSize = 0;
-    PDWORD                  AddrNames  = NULL;
-    PDWORD                  AddrFuncs  = NULL;
-    PWORD                   AddrOrdns  = NULL;
-    PCHAR                   FuncName   = NULL;
-    DWORD                   i          = 0;
+extern "C" PVOID CenLdrFunction( PVOID Library, ULONG Function ) {
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)Library;
+    PIMAGE_NT_HEADERS nt;
+    PIMAGE_EXPORT_DIRECTORY exp;
+    PDWORD names, funcs;
+    PWORD  ords;
+    DWORD  i, n;
 
-    if ( ! Library || ! Function )
+    if ( ! Library || dos->e_magic != IMAGE_DOS_SIGNATURE )
         return NULL;
 
-    if ( ! ( Nt = LdrpImageHeader( Library ) ) )
+    nt = (PIMAGE_NT_HEADERS)( (PUCHAR)Library + dos->e_lfanew );
+    if ( nt->Signature != IMAGE_NT_SIGNATURE )
         return NULL;
 
-    ExpDir     = (PIMAGE_EXPORT_DIRECTORY)( U_PTR( Library ) + Nt->OptionalHeader.DataDirectory[ IMAGE_DIRECTORY_ENTRY_EXPORT ].VirtualAddress );
-    ExpDirSize = Nt->OptionalHeader.DataDirectory[ IMAGE_DIRECTORY_ENTRY_EXPORT ].Size;
-    AddrNames  = (PDWORD)( U_PTR( Library ) + ExpDir->AddressOfNames );
-    AddrFuncs  = (PDWORD)( U_PTR( Library ) + ExpDir->AddressOfFunctions );
-    AddrOrdns  = (PWORD)( U_PTR( Library ) + ExpDir->AddressOfNameOrdinals );
+    exp = (PIMAGE_EXPORT_DIRECTORY)( (PUCHAR)Library +
+        nt->OptionalHeader.DataDirectory[ IMAGE_DIRECTORY_ENTRY_EXPORT ].VirtualAddress );
+    n = exp->NumberOfNames;
+    names = (PDWORD)( (PUCHAR)Library + exp->AddressOfNames );
+    funcs = (PDWORD)( (PUCHAR)Library + exp->AddressOfFunctions );
+    ords  = (PWORD)( (PUCHAR)Library + exp->AddressOfNameOrdinals );
 
-    for ( i = 0; i < ExpDir->NumberOfNames; i++ ) {
-        FuncName = (PCHAR)( U_PTR( Library ) + AddrNames[ i ] );
-
-        if ( HashString( FuncName, 0 ) != Function )
-            continue;
-
-        Address = (PVOID)( U_PTR( Library ) + AddrFuncs[ AddrOrdns[ i ] ] );
-
-        /* forwarded export? (address lands inside the export directory) */
-        if ( ( U_PTR( Address ) >= U_PTR( ExpDir ) ) &&
-             ( U_PTR( Address ) <  U_PTR( ExpDir ) + ExpDirSize ) ) {
-            Address = LdrpFwdResolve( (PCHAR) Address );
+    for ( i = 0; i < n; i++ ) {
+        PCHAR name = (PCHAR)( (PUCHAR)Library + names[i] );
+        if ( CenHashString( name, 0 ) == Function ) {
+            PVOID fn = (PVOID)( (PUCHAR)Library + funcs[ ords[i] ] );
+            /* forwarder? resolve the forwarding string instead of failing */
+            if ( (PUCHAR)fn >= (PUCHAR)exp && (PUCHAR)fn < (PUCHAR)exp +
+                 nt->OptionalHeader.DataDirectory[ IMAGE_DIRECTORY_ENTRY_EXPORT ].Size ) {
+                return CenFwdResolve( (PCHAR)fn );
+            }
+            return fn;
         }
-        break;
     }
-    return Address;
+    return NULL;
 }
