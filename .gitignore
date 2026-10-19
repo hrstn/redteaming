@@ -97,3 +97,6 @@ artifacts/
 # Blazor / web (harmless to include even if unused)
 wwwroot/dist/
 node_modules/
+# --- Stray built test binaries (sources tracked; rebuild with mingw) ---
+dpapi_credman.exe
+NaX/src_loader/scripts/*.exe
