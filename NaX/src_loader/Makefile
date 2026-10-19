@@ -29,7 +29,7 @@ MAKEFLAGS += -s
 ##
 CC_X64   := x86_64-w64-mingw32-g++
 NASM     := nasm
-OBJCOPY  := objcopy
+OBJCOPY  := x86_64-w64-mingw32-objcopy
 
 ##
 ## Technique selection (overridable from parent Makefile)
@@ -70,8 +70,8 @@ BIN_X64  := bin/nax_loader.x64.bin
 all: $(BIN_X64)
 
 $(BIN_X64): $(EXE_X64)
-	$(OBJCOPY) --dump-section .text=$(BIN_X64) $(EXE_X64) 2>/dev/null; true
-	@touch $(BIN_X64)
+	@echo "[+] dump .text shellcode"
+	$(OBJCOPY) --dump-section .text=$(BIN_X64) $(EXE_X64)
 	@echo "  BIN  $(BIN_X64)  ($$(wc -c < $(BIN_X64)) bytes)"
 
 $(EXE_X64): $(ASM_OBJ) $(C_OBJS)

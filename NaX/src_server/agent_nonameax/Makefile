@@ -7,7 +7,10 @@
 # Current server: go1.25.4 X:jsonv2,greenteagc
 
 GOEXPERIMENT := jsonv2,greenteagc
-DEPLOY_DIR   := ../../../Server/extenders/agent_nonameax
+# The teamserver that actually runs loads extenders from the AdaptixC2 dist
+# tree - NOT the workspace's Server/ copy.  All prior deploys landed there,
+# so plugins had to be manually copied to take effect.
+DEPLOY_DIR   ?= $(HOME)/AdaptixC2/dist/extenders/agent_nonameax
 OUT          := $(DEPLOY_DIR)/agent_nonameax.so
 
 .PHONY: all clean

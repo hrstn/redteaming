@@ -28,7 +28,11 @@ LOADER_BIN       := src_loader/bin/nax_loader.x64.bin
 # Transport-specific beacon build directory
 NAX_TRANSPORT_PROFILE ?= 0
 NAX_STOMP_ADVANCED    ?= 0
-BEACON_TRANSPORT := NAX_TRANSPORT_PROFILE=$(NAX_TRANSPORT_PROFILE) NAX_STOMP_ADVANCED=$(NAX_STOMP_ADVANCED)
+# Sensor lane (see src_beacon/Makefile lines 37-53):
+#   elastic  - CRTL/Elastic lane: direct ntdll stubs (no beacon .text RW flip)
+#   defender - OSAI/Defender lane: indirect syscalls + stack spoof
+NAX_LANE              ?= elastic
+BEACON_TRANSPORT := NAX_TRANSPORT_PROFILE=$(NAX_TRANSPORT_PROFILE) NAX_STOMP_ADVANCED=$(NAX_STOMP_ADVANCED) NAX_LANE=$(NAX_LANE)
 
 ifeq ($(NAX_TRANSPORT_PROFILE),1)
 BEACON_BUILD     := src_beacon/build/smb

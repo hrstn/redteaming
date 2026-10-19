@@ -85,12 +85,15 @@ function GenerateUI(listeners_type)
     let checkStomp = form.create_check("Module stomping (image-backed beacon)");
     checkStomp.setChecked(true);
     let comboStompTech = form.create_combo();
-    comboStompTech.addItems(["Basic (LoadLibraryEx)", "Custom"]);
+    comboStompTech.addItems(["Basic (LoadLibraryEx)", "Advanced (indirect syscalls)", "Custom"]);
     let comboStompDll = form.create_textline("chakra.dll");
     let checkUnwind = form.create_check("Stomp .pdata (valid stack walks)");
     checkUnwind.setChecked(true);
     let checkThreadPool = form.create_check("Thread pool (TppWorkerThread start addr)");
     checkThreadPool.setChecked(true);
+    let comboLane = form.create_combo();
+    comboLane.addItems(["Elastic (CRTL lane - direct ntdll stubs)", "Defender (OSAI lane - indirect syscalls)"]);
+    comboLane.setCurrentIndex(0);
 
     form.connect(checkStomp, "stateChanged", function() {
         let on = checkStomp.isChecked();
@@ -106,6 +109,7 @@ function GenerateUI(listeners_type)
     loaderLayout.addWidget(form.create_label("Stomp DLL:"),    2, 0); loaderLayout.addWidget(comboStompDll,   2, 1);
     loaderLayout.addWidget(form.create_label("Unwind:"),       3, 0); loaderLayout.addWidget(checkUnwind,     3, 1);
     loaderLayout.addWidget(form.create_label("Execution:"),    4, 0); loaderLayout.addWidget(checkThreadPool, 4, 1);
+    loaderLayout.addWidget(form.create_label("Lane:"),         5, 0); loaderLayout.addWidget(comboLane,       5, 1);
 
     let loaderPanel = form.create_panel();
     loaderPanel.setLayout(loaderLayout);
@@ -118,6 +122,7 @@ function GenerateUI(listeners_type)
     container.put("stomp_dll", comboStompDll);
     container.put("stomp_unwind", checkUnwind);
     container.put("thread_pool", checkThreadPool);
+    container.put("lane", comboLane);
 
     // --- BOF ---
     let checkBofStomp = form.create_check("Image-backed BOF .text");

