@@ -101,6 +101,10 @@ node_modules/
 dpapi_credman.exe
 NaX/src_loader/scripts/*.exe
 
+# --- Local backups (kept on disk, never committed) ---
+Spiritual-Spell-Red-Teaming-main.backup.zip
+*.backup.zip
+
 # --- Working notes / planning docs (kept locally, never committed) ---
 REDTEAMING_AUDIT.md
 C2-Tool-Collection/BOF-IDEAS-*.md
