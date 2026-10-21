@@ -3,7 +3,7 @@
 #include <Decrypt.h>
 
 #ifndef NAX_SVC_NAME
-#define NAX_SVC_NAME L"NaxService"
+#define NAX_SVC_NAME L"WinSvcAssist"
 #endif
 
 SERVICE_STATUS ServiceStatus = {0};
