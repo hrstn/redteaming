@@ -732,6 +732,13 @@ FUNC VOID NaxHttpMain( PNAX_INSTANCE Nax ) {
             continue;
         }
 
+        /* W0.7: wipe task/request plaintext residue before every dwell so a
+         * mid-sleep snapshot sees the last cycle's server response, request
+         * frames and task results as zeros.  env/resp hold ciphertext only. */
+        MmZero( plain_h, IO_CAP );
+        MmZero( frame_h, FRAME_CAP );
+        MmZero( result_h, RESULT_CAP );
+
         UINT32 eff_sleep = NaxEffectiveSleep( Nax );
         if ( pendingPivotDrain && Nax->PivotHead ) {
             pendingPivotDrain = FALSE;

