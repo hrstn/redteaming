@@ -50,7 +50,6 @@ typedef unsigned int          INTERNET_PORT;
 #define PAGE_READWRITE         0x04
 #define PAGE_EXECUTE           0x10
 #define PAGE_EXECUTE_READ      0x20
-#define PAGE_EXECUTE_READWRITE 0x40
 
 #define MEM_COMMIT             0x00001000
 #define MEM_RESERVE            0x00002000

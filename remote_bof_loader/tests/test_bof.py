@@ -60,9 +60,9 @@ def main() -> int:
         print(f"[-] failed to compile {bof_o}", file=sys.stderr)
         return 1
 
-    # Validate loader binary
+    # Validate loader binary (canonical validator lives in hostpayload_v2)
     print("== Validating loader binary ==")
-    run([sys.executable, ROOT / "scripts" / "validate.py", loader])
+    run([sys.executable, ROOT.parent / "hostpayload_v2" / "scripts" / "validate.py", loader])
 
     # Verify zero imports with objdump
     print("== Verifying zero imports ==")

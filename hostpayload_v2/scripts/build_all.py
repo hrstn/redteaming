@@ -169,6 +169,7 @@ def verify_dropper_crypto() -> None:
 
 def validate_outputs() -> None:
     files = [
+        LOADER / "bin/nax_adv.x64.bin",
         PAYLOAD / "build/dropper_embed.exe",
         PAYLOAD / "build/dropper_staged.exe",
         PAYLOAD / "build/dropper_embed.c",

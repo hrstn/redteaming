@@ -86,7 +86,7 @@ Example:
 ## Validation
 
 ```bash
-python3 scripts/validate.py bin/bofloader.exe
+python3 ../hostpayload_v2/scripts/validate.py bin/bofloader.exe
 ```
 
 Scans the compiled binary for:
@@ -103,7 +103,7 @@ Scans the compiled binary for:
 python3 tests/test_bof.py
 ```
 
-Compiles `tests/test_bof.c`, builds the loader, runs `validate.py`, checks that
+Compiles `tests/test_bof.c`, builds the loader, runs the canonical validator, checks that
 the import table is empty, and — if `wine` or `qemu-x86_64` is available —
 runs the loader against the test BOF.
 
@@ -116,7 +116,7 @@ remote_bof_loader/
 ├── scripts/
 │   ├── build.py               # MinGW cross-compile helper
 │   ├── gen_hashes.py          # regenerate src/hashes.h
-│   └── validate.py            # static signature check
+│   └── test_bof.py            # build + canonical static-signature check
 ├── src/
 │   ├── bofloader.h            # types, structs, function declarations
 │   ├── hashes.h               # generated FNV1a-32 API hashes
