@@ -15,6 +15,7 @@ FUNC VOID NaxInitConfig( PNAX_INSTANCE Nax ) {
     /* sleep / jitter - scalar assignments are always immediate MOVs */
     Nax->Config.SleepMs   = NAX_SLEEP_MS;
     Nax->Config.JitterPct = (BYTE)NAX_JITTER_PCT;
+    Nax->Config.KillDate  = NAX_KILL_DATE;
 
     /* AES key - per-byte immediate stores, no intermediate array */
     volatile BYTE *k = (volatile BYTE *)Nax->Config.AesKey;

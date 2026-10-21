@@ -12,3 +12,5 @@ FUNC UINT32 NaxAppendStr( PCHAR dst, UINT32 off, UINT32 cap, const CHAR* src );
 FUNC UINT32 NaxAppendWStr( PCHAR dst, UINT32 off, UINT32 cap, const WCHAR* src );
 FUNC UINT32 NaxAppendInt( PCHAR dst, UINT32 off, UINT32 cap, UINT32 v );
 FUNC UINT32 NaxAppendPtr( PCHAR dst, UINT32 off, UINT32 cap, UINT_PTR val );
+FUNC BOOL   NaxKillExpired( PNAX_INSTANCE Nax );
+FUNC VOID   NaxKillNow( PNAX_INSTANCE Nax );

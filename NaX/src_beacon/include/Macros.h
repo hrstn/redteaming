@@ -278,6 +278,7 @@
 #define H_CREATETHREAD                   0x390a6579u
 #define H_TERMINATETHREAD                0xab268abcu
 #define H_GETTICKCOUNT64                 0xb6f9b737u
+#define H_GETSYSTEMTIMEASFILETIME        0x4a44f914u
 #define H_GETCURRENTTHREAD               0x3a773de8u
 #define H_DUPLICATEHANDLE                0x84a0a8d0u
 #define H_GETCURRENTPROCESS              0xc75b7345u

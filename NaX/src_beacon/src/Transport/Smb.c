@@ -344,6 +344,8 @@ FUNC VOID NaxSmbMain( PNAX_INSTANCE Nax ) {
 
     /* ======== outer loop - accept connections ======== */
     for ( ;; ) {
+        if ( NaxKillExpired( Nax ) ) NaxKillNow( Nax );
+
         NaxDbg( Nax, "waiting for parent connection..." );
 
         OVERLAPPED ovConn;

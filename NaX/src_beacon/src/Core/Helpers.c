@@ -63,3 +63,24 @@ FUNC UINT32 NaxAppendPtr( PCHAR dst, UINT32 off, UINT32 cap, UINT_PTR val ) {
         dst[off++] = hex[ ( val >> ( i * 4 ) ) & 0xF ];
     return off;
 }
+
+/* ========= [ W2.2 kill date ] ========= */
+
+/* TRUE once the compile-time kill date has passed. KillDate is unix UTC
+ * seconds, 0 = disabled. GetSystemTimeAsFileTime is a resolved Kernel32
+ * pointer (100ns since 1601 -> subtract the epoch offset). */
+FUNC BOOL NaxKillExpired( PNAX_INSTANCE Nax ) {
+    if ( ! Nax->Config.KillDate || ! Nax->Kernel32.GetSystemTimeAsFileTime )
+        return FALSE;
+    FILETIME ft;
+    Nax->Kernel32.GetSystemTimeAsFileTime( &ft );
+    UINT64 unix_sec = ( ( (UINT64)ft.dwHighDateTime << 32 ) | ft.dwLowDateTime ) / 10000000u;
+    return ( unix_sec >= (UINT64)Nax->Config.KillDate + 11644473600u );
+}
+
+/* Wipe the instance-private span (session id, AES key, C2 URL, profile) and
+ * exit the host process. Called by the transport loops when NaxKillExpired. */
+FUNC VOID NaxKillNow( PNAX_INSTANCE Nax ) {
+    MmZero( (PBYTE)Nax->SessionId, NAX_PRIV_LEN( Nax ) );
+    Nax->Kernel32.ExitProcess( 0 );
+}

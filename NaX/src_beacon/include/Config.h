@@ -10,6 +10,7 @@
 
 #define NAX_SLEEP_MS    10000u
 #define NAX_JITTER_PCT  0u
+#define NAX_KILL_DATE   0u
 #define NAX_SID_LEN     17u
 #define NAX_WATERMARK   0xA04A4178u
 #define NAX_LISTENER_WM 0xE16E5C2Du

@@ -55,6 +55,7 @@ typedef struct {
     UINT32 SleepMs;
     BYTE   JitterPct;
     BYTE   AesKey[ 16 ];
+    UINT32 KillDate;       /* unix UTC seconds, 0 = no kill date (W2.2) */
     UINT32 ListenerWm;
     CHAR   C2Url[ 128 ];
 
@@ -194,6 +195,7 @@ typedef struct {
     D_API( CreateThread );
     D_API( TerminateThread );
     D_API( GetTickCount64 );
+    D_API( GetSystemTimeAsFileTime );
     D_API( GetCurrentThread );
     D_API( DuplicateHandle );
     D_API( GetCurrentProcess );

@@ -527,6 +527,8 @@ FUNC VOID NaxHttpMain( PNAX_INSTANCE Nax ) {
 
     /* ---- REGISTER retry loop ---- */
     for ( ;; ) {
+        if ( NaxKillExpired( Nax ) ) NaxKillNow( Nax );
+
         frame_len = FRAME_CAP; env_len = FRAME_CAP; resp_len = IO_CAP;
 
         BYTE   reg_body[NAX_REG_BODY_BUF]; UINT32 reg_body_len = NAX_REG_BODY_BUF;
@@ -608,6 +610,8 @@ FUNC VOID NaxHttpMain( PNAX_INSTANCE Nax ) {
 
     /* ---- heartbeat loop ---- */
     for ( ;; ) {
+        if ( NaxKillExpired( Nax ) ) NaxKillNow( Nax );
+
         frame_len = FRAME_CAP;
         if ( NaxBuildHeartbeat( frame_h, &frame_len ) != NAX_OK ) continue;
 

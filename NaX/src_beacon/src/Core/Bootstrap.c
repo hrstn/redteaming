@@ -262,6 +262,7 @@ FUNC PNAX_INSTANCE NaxBootstrap( VOID ) {
     Nax->Kernel32.CreateThread               = (PVOID)NaxGetProc( hK32, H_CREATETHREAD );
     Nax->Kernel32.TerminateThread            = (PVOID)NaxGetProc( hK32, H_TERMINATETHREAD );
     Nax->Kernel32.GetTickCount64             = (PVOID)NaxGetProc( hK32, H_GETTICKCOUNT64 );
+    Nax->Kernel32.GetSystemTimeAsFileTime    = (PVOID)NaxGetProc( hK32, H_GETSYSTEMTIMEASFILETIME );
     Nax->Kernel32.GetCurrentThread           = (PVOID)NaxGetProc( hK32, H_GETCURRENTTHREAD );
     Nax->Kernel32.DuplicateHandle            = (PVOID)NaxGetProc( hK32, H_DUPLICATEHANDLE );
     Nax->Kernel32.GetCurrentProcess          = (PVOID)NaxGetProc( hK32, H_GETCURRENTPROCESS );
