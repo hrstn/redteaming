@@ -160,7 +160,7 @@ The `sleepmask-set` command rebuilds the sleepmask BOF from source and hot-loads
 
 1. Edit sleepmask source files in `src_sleepmask/`
 2. Run `sleepmask-set` (or `sleepmask-set -debug`) from the Adaptix operator console
-3. The server rebuilds the BOF from source (`make clean && make` in `src_sleepmask/`)
+3. The server rebuilds the BOF from source (`make -C src_sleepmask all` for the release embed; the `debug` variant for `-debug`)
 4. Fresh `.o` bytes are sent to the beacon via `CMD_SLEEPMASK_SET` (0x32)
 5. Beacon calls `NaxSleepmaskWire` → `NaxBofLoadResident` (frees old resident, loads new)
 6. Gate wrappers are re-registered to route through the new `sleep_mask()` entry point
@@ -252,7 +252,7 @@ And on each sleep cycle:
 
 ## Adding a New Gated API
 
-This section walks through adding a new API to BeaconGate end-to-end. We'll use `VirtualProtect` as the example.
+This section walks through adding a new API to BeaconGate end-to-end. We'll use `VirtualProtect` as the example -- note that `VirtualProtect` (`GATE_API_VIRTUAL_PROTECT`) is already implemented, so the snippets below mirror existing code rather than hypothetical additions.
 
 ### Step 1: Add the GATE_API enum value
 
@@ -514,5 +514,5 @@ Where `{sleep_obf}` is `on` or `off`.
 | `src_sleepmask/include/Imports.h` | Sleepmask BOF import declarations |
 | `src_sleepmask/src/main.c` | Sleepmask BOF entry (`sleep_mask`), per-API handlers, `HandleGeneric` dispatcher |
 | `src_server/agent_nonameax/pl_build.go` | Config.h generation with `NAX_GATE_TOUPPER` defines + `Config_sleepmask.h` |
-| `src_server/agent_nonameax/pl_main.go` | Reads `gate_apis` list, builds sleepmask BOF, embeds in payload |
+| `src_server/agent_nonameax/pl_build_payload.go` | Reads `gate_apis` list, builds sleepmask BOF, embeds in payload |
 | `src_server/agent_nonameax/ax_config.axs` | BeaconGate UI tab, SleepObf config, `sleepmask-set` command |

@@ -17,6 +17,7 @@ Agent extender -- handles payload generation, command creation, and result proce
 | `pl_results.go` | `ProcessTasksResult` callback: decode beacon results to operator-visible output |
 | `pl_wire.go` | Wire protocol helpers: frame encode/decode, task packing |
 | `pl_crypto.go` | AES-128-CBC encrypt/decrypt (mirrors beacon's BCrypt implementation) |
+| `pl_shellcrypt.go` | ChaCha20+HMAC at-rest encryption of the embedded payload inside the PE wrappers (keys generated per build) |
 | `pl_profile.go` | Malleable C2 profile parsing and validation |
 | `pl_format.go` | Output formatting (hex dumps, tables, structured text) |
 | `pl_upload.go` | Chunked upload state machine |
@@ -26,7 +27,7 @@ Agent extender -- handles payload generation, command creation, and result proce
 | `bof_args.go` | BOF argument packer (Beacon API compatible format) |
 | `ax_config.axs` | AxScript UI: command definitions, parameter widgets, result rendering |
 | `config.yaml` | Plugin metadata: agent name, watermark, OS/arch support |
-| `pe_templates/` | PE wrapper templates for exe/dll/svc debug output formats |
+| `pe_templates/` | PE wrapper output formats (Bin shellcode / Exe / Dll / Svc service), built from the UI Output Format selection |
 
 ### listener_nonameax_http
 
@@ -93,8 +94,8 @@ cd src_server/agent_nonameax && make
 cd src_server/listener_nonameax_http && make
 ```
 
-Plugins are built with `-buildmode=plugin` and deployed to `Server/extenders/`. Each plugin directory gets the `.so` binary plus `ax_config.axs` and `config.yaml`.
+Plugins are built with `-buildmode=plugin`. Canonical deploy flow: build the plugin, then copy `agent_nonameax.{so,axs}` (plus `config.yaml`) to `~/AdaptixC2/dist/extenders/agent_nonameax/` and restart `adaptixserver`. Each deployed plugin directory holds the `.so` binary plus `ax_config.axs` and `config.yaml` (`Server/extenders/` is only the Makefile's overridable default deploy dir, `SERVER_DIR ?=`).
 
 ## Registration
 
-All plugins must be listed in `Server/profile.yaml` for Adaptix to load them. The agent watermark must be exactly 8 hex characters and match across agent + listener configs.
+All plugins must be registered in the teamserver's `profile.yaml` for Adaptix to load them. The agent watermark must be exactly 8 hex characters and match across agent + listener configs.

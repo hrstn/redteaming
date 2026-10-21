@@ -18,6 +18,8 @@ Quick-reference for all NoNameAx (NaX) beacon commands available in the Adaptix 
 | `rmdir` | `0x17` | File Ops | Remove directory (`-rf` for recursive) |
 | `cat` | `0x18` | File Ops | Read file contents |
 | `ls` | `0x19` | Navigation | List directory contents (`-r` for recursive tree) |
+| `cp` | `0x1A` | File Ops | Copy a file |
+| `mv` | `0x1B` | File Ops | Move or rename a file |
 | `bof` | `0x20` | Execution | Execute a Beacon Object File |
 | `execute bof` | `0x20` | Execution | Execute BOF (Extension-Kit compatible) |
 | `screenshot` | `0x21` | Recon | GDI desktop capture |
@@ -42,7 +44,7 @@ Quick-reference for all NoNameAx (NaX) beacon commands available in the Adaptix 
 | `bof-stomp` | `0x31` | Config | Reconfigure BOF module stomping |
 | `sleepmask-set` | `0x32` | Config | Rebuild and send sleepmask BOF to agent |
 | `sleepobf-config` | `0x33` | Config | Configure sleep obfuscation at runtime |
-| `chunksize` | `0x34` | Config | Set download chunk size on agent |
+| `chunksize` | `0x2B` | Config | Set download chunk size on agent |
 | `dll-notify list` | `0x3A` | Evasion | List DLL load notification callbacks |
 | `dll-notify remove` | `0x3B` | Evasion | Remove all DLL load notification callbacks |
 | `link smb` | `0x38` | Pivoting | Connect to child beacon's named pipe |
@@ -51,6 +53,7 @@ Quick-reference for all NoNameAx (NaX) beacon commands available in the Adaptix 
 | `socks stop` | -- | Tunneling | Stop SOCKS proxy |
 | `lportfwd` | -- | Tunneling | Local port forwarding (via Adaptix UI) |
 | `rportfwd` | -- | Tunneling | Reverse port forwarding (via Adaptix UI) |
+| Remote Shell (browser) | `0x47`-`0x49` | Session | Interactive shell: start (`0x47`) / write (`0x48`) / close (`0x49`) channels, driven from the Remote Shell browser |
 
 ---
 
@@ -162,7 +165,7 @@ rmdir -rf C:\Temp\staging
 
 ### download
 
-Download a file from the target machine to the operator. The file appears in the Adaptix Downloads tab. Files are transferred in a single tagged frame (filename + contents).
+Download a file from the target machine to the operator. The file appears in the Adaptix Downloads tab. Downloads are chunked: the beacon sends START, CONTINUE, and FINISH frames as the download progresses, with the chunk size configurable per download via `chunksize` (default 2 MB, hard cap 4 MB).
 
 ```
 download <remote_path>
@@ -693,11 +696,23 @@ bof-stomp async jscript9.dll,mshtml.dll,d3d11.dll,chakra.dll
 
 Each DLL in the pool provides one async execution slot. More DLLs means more concurrent async BOFs.
 
+#### bof-stomp sleepmask
+
+Replace the DLL backing the dedicated sleepmask stomp slot (`SmSlot`) and re-wire the gate: the beacon frees the resident sleepmask BOF, loads the new DLL into `SmSlot`, and re-loads the cached sleepmask BOF. This is also triggered from the UI's Sleep Obf control.
+
+```
+bof-stomp sleepmask <dll_name>
+```
+
+```
+bof-stomp sleepmask msxml6.dll
+```
+
 ### sleepmask-set
 
 Rebuild the sleepmask BOF from source and send it to the agent. The beacon loads the new BOF via `NaxBofLoadResident` (module-stomped into the dedicated SmSlot DLL), unwires the old gate, and rewires all BeaconGate function pointers to route through the new `sleep_mask()` entry point.
 
-This lets you iterate on sleepmask logic (e.g., adding debug prints, changing wait behavior) without recompiling or redeploying the beacon. The server runs `make clean && make` in `src_sleepmask/` on every invocation, so any source changes you make are picked up automatically.
+This lets you iterate on sleepmask logic (e.g., adding debug prints, changing wait behavior) without recompiling or redeploying the beacon. The server runs `make -C src_sleepmask all` (or its `debug` variant for `-debug`) on every invocation, so any source changes you make are picked up automatically.
 
 ```
 sleepmask-set [-debug]
@@ -801,21 +816,29 @@ When generating a new NaX beacon in the Adaptix UI, the following options are pr
 
 | Option | Default | Notes |
 |--------|---------|-------|
-| Callback Host | `192.168.77.128` | C2 server IP/hostname (HTTP only) |
-| Callback Port | `8080` | C2 server port (HTTP only) |
 | Sleep (seconds) | `10` | Initial callback interval (HTTP only) |
 | Jitter (%) | `0` | Initial jitter percentage (HTTP only) |
+| Kill date | empty | `YYYY-MM-DD` (unix-UTC end-of-day); empty = never |
+| Output Format | `Bin` | Bin shellcode, or Exe/Dll/Svc PE wrapper |
+| Service Name | `WinSvcAssist` | Service name (Svc output only) |
+| DLL Export | `Runner` | Export name (Dll output only) |
+| Debug | Disabled | Enable `DPRINT` output (visible in DebugView) |
+| Full rebuild | Enabled | Clean + recompile all sources |
 | Module stomping | Enabled | Load beacon into image-backed memory |
+| Technique | Basic | Basic (LoadLibraryEx) / Advanced (indirect syscalls) / Custom |
 | Stomp DLL | `chakra.dll` | Sacrificial DLL for loader module stomping |
 | Unwind (.pdata) | Enabled | Stomp `.pdata` for valid stack walks |
 | Thread pool | Enabled | Use `TppWorkerThread` as start address |
+| Lane | Elastic | Elastic (CRTL lane, direct ntdll stubs) / Defender (OSAI lane, indirect syscalls) |
 | BOF stomping | Enabled | Image-backed BOF `.text` execution |
 | BOF sync DLL | `chakra.dll` | DLL for synchronous BOF stomping |
 | BOF async DLLs | `jscript9.dll`, `mshtml.dll`, `d3d11.dll` | Pool for async BOF stomping |
-| Debug | Disabled | Enable `DPRINT` output (visible in DebugView) |
-| Full rebuild | Enabled | Clean + recompile all sources |
+| Sleep Obf | On | Sleep obfuscation (Off/On) |
+| BeaconGate | Disabled | Route gated APIs through the sleepmask BOF |
+| Sleepmask Stomp DLL | `msxml6.dll` | Dedicated sleepmask slot DLL (BeaconGate enabled) |
+| Gated APIs | `Sleep`, `WaitForSingleObject`, `WaitForMultipleObjects` | Win32 functions proxied through the gate (BeaconGate enabled) |
 
-HTTP-specific options (sleep, jitter, callback host/port) are hidden for SMB beacon generation.
+HTTP-specific options (sleep, jitter) are hidden for SMB beacon generation.
 
 ---
 

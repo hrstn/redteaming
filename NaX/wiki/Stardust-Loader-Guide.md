@@ -983,7 +983,7 @@ NaxModuleStomp flow:
 
 The beacon now runs from image-backed (IMG) memory. Memory scanners see a loaded DLL with executable code, not a suspicious private allocation.
 
-See the [Module Stomping](Module-Stomping) page for DLL selection guidance and advanced configuration.
+See the [Module Stomping](Module-Stomping.md) page for DLL selection guidance and advanced configuration.
 
 ### Execution Transfer
 

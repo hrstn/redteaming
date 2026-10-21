@@ -48,8 +48,9 @@ Compile-time hashing via `HASH_STR()` (constexpr in C++ mode) ensures no API nam
 ## Source Files
 
 ```
+asm/
+  x64/Stardust.asm # NASM entry point, calls PreMain
 src/
-  Entry.asm        # NASM entry point, calls PreMain
   PreMain.c        # Stardust bootstrap: RIP calc, PEB walk, TLS egghunter
   Main.c           # API resolution, NaxHeader parsing, stomp/exec dispatch
   Ldr.c            # LdrModulePeb (PEB walk), LdrFunction (export walk + forwarding)

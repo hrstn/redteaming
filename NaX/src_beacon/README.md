@@ -19,7 +19,7 @@ Position-independent C2 beacon compiled as a single `.text` section shellcode bl
 3. **Command dispatch** (`NaxDispatch`)
    - Maps command IDs (defined in `Wire.h`) to handler functions
    - Each handler reads args from the wire buffer and writes results into the output buffer
-   - 26 built-in commands covering file I/O, process management, token ops, screenshots, BOFs, pivoting, and tunneling
+   - 54 built-in commands (`NAX_CMD_*` defines in `Wire.h`, 51 dispatch cases in `Dispatch.c`) covering file I/O, process management, token ops, screenshots, BOFs, pivoting, and tunneling
 
 ## PIC Constraints
 
@@ -36,6 +36,7 @@ src/
   Main.c                          # NaxMain entry point, transport dispatch
   Core/
     Bootstrap.c                   # API resolution, NAX_INSTANCE allocation, sysinfo gathering
+    Syscall.c                     # Indirect syscalls: SSN resolution, stub patching
     Ldr.c                         # PEB walk (NaxGetModule), export walk (NaxGetProc), hashing, encoding
     Config.c                      # Embedded profile parsing (NaxInitConfig), runtime profile apply
     PackerProfile.c               # Profile binary decoder
@@ -45,6 +46,7 @@ src/
     Helpers.c                     # Win32 error formatting, string helpers
   Commands/
     Dispatch.c                    # Command ID → handler router
+    Bof.c                         # CMD_BOF: receive COFF object + packed args, execute
     Core.c                        # cd, pwd, mkdir, rmdir, cat, ls, rm
     Whoami.c                      # Current identity (domain\user)
     Sleep.c                       # Set callback interval + jitter
@@ -69,12 +71,15 @@ src/
     Smb.c                         # Named pipe transport for SMB pivoting
   Bof/
     Loader.c                      # COFF loader: parse sections, relocate, resolve imports
-    Api.c                         # Beacon API (29 functions exposed to BOFs)
+    Api.c                         # Beacon API (33 functions exposed to BOFs)
     Stomp.c                       # BOF module stomping: image-backed .text, IFT .pdata injection
 include/
   Instance.h                      # NAX_INSTANCE struct, API bundles, gate types
   Wire.h                          # Command IDs, message types, wire constants
+  Syscall.h                       # P1 indirect-syscall stubs (byte layout shared with asm)
   Config.h                        # Build-time profile/sleepmask embedding macros
+  Config_profile.h                # Auto-generated profile embed (WRITE macro)
+  Config_sleepmask.h              # Auto-generated sleepmask BOF embed (WRITE macro)
   Macros.h                        # FUNC, G_INSTANCE, MmCopy, MmZero, NaxDbg
   Nax.h                           # Central forward declarations for all internal functions
   Bof.h                           # COFF structures, BOF_STOMP_POOL, Beacon API typedefs
@@ -85,6 +90,8 @@ include/
   Common.h                        # Base types, compiler macros
   Defs.h                          # Hash constants (H_MODULE_*, H_FUNC_*)
   NaxConstants.h                  # Error codes, buffer sizes, feature flags
+asm/
+  Syscall.x64.asm                 # P1 indirect-syscall stubs (patched at boot)
 ```
 
 ## Build

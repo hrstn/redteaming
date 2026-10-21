@@ -30,10 +30,10 @@ src_beacon/                       # PIC shellcode beacon (C, MinGW cross-compile
   asm/Entry.x64.asm               #   NASM entry stub
   include/                        #   Instance.h, Wire.h, Config.h, Bof.h, Macros.h, ...
   src/Main.c                      #   Heartbeat loop
-  src/Core/                       #   Bootstrap, Ldr, Config, Crypto, Packer
-  src/Transport/                  #   Http, HttpCodec, Smb, Profile, PackerProfile, Pivot
-  src/Commands/                   #   Dispatch, Whoami, Sleep, Screenshot, Download, ...
-  src/Bof/                        #   Bof, BofStomp, Jobs, Loader
+  src/Core/                       #   Bootstrap, Syscall, Ldr, Config, Crypto, Packer, PackerProfile, Cfg, Helpers
+  src/Transport/                  #   Http, HttpCodec, Smb
+  src/Commands/                   #   Dispatch, Whoami, Sleep, Core, Bof, BofStomp, Jobs, Sleepmask, Shell, Token, Pivot, Tunnel, ...
+  src/Bof/                        #   Api, Loader, Stomp (COFF loader engine)
   Makefile                        #   Beacon sub-make
   Linker.ld                       #   Custom linker script
 src_loader/                       # Stardust-pattern UDRL loader
@@ -154,12 +154,12 @@ Run plugin unit tests:
 make -C src_server test
 ```
 
-The server Makefile automatically copies `.so`, `config.yaml`, and `ax_config.axs` files to the deployment directories under `Server/extenders/`.
+The server Makefile automatically copies `.so`, `config.yaml`, and `ax_config.axs` files to the deployment directories under `Server/extenders/` (`Server/` is the Makefile's overridable default staging dir, `SERVER_DIR ?=`).
 
 **GOEXPERIMENT**: The Go plugins must be compiled with the same `GOEXPERIMENT` flags used to build the Adaptix teamserver binary. The server Makefile sets `GOEXPERIMENT=jsonv2,greenteagc` by default. Verify against the deployed binary with:
 
 ```bash
-strings Server/adaptixserver | grep '^go[0-9]'
+strings adaptixserver | grep '^go[0-9]'
 ```
 
 ## Build Pipeline
@@ -216,9 +216,9 @@ The `pack_nax.py` script normalizes `.pdata` RUNTIME_FUNCTION entries by convert
 
 The Go agent plugin's `BuildPayload()` function performs this same three-stage pipeline at runtime when an operator generates a payload through the Adaptix UI. It:
 
-1. Generates `Config.h` from operator-selected options (C2 URL, sleep, jitter, profile, etc.)
-2. Invokes the cross-compiler and packer
-3. Returns the final `nax.x64.bin` blob to the teamserver
+1. Generates `Config.h` from operator-selected options (C2 URL, sleep, jitter, profile, etc.), baking `NAX_KILL_DATE` from the UI kill-date field (`YYYY-MM-DD` -> unix-UTC end-of-day; empty = never)
+2. Selects the build lane (`elastic` / `defender`) and technique (Basic / Advanced / Custom), then invokes the cross-compiler and packer
+3. Emits the selected output format: `Bin` shellcode, or an Exe/Dll/Svc PE wrapper whose embedded payload is ChaCha20+HMAC-encrypted at rest (`pl_shellcrypt.go`)
 
 ## Important Build Rules
 
@@ -238,31 +238,33 @@ The server Makefile handles both compilation and deployment:
 make -C src_server
 ```
 
-This copies the following to `Server/extenders/`:
+This copies the following to the staging dir selected by `SERVER_DIR` (Makefile default: `Server/extenders/`). Deploy means copying the built plugin files into the teamserver's extenders directory:
 
 ```
-Server/extenders/
+~/AdaptixC2/dist/extenders/
   agent_nonameax/
     agent_nonameax.so
+    agent_nonameax.axs
     config.yaml
-    ax_config.axs
   listener_nonameax_http/
     listener_nonameax_http.so
+    listener_nonameax_http.axs
     config.yaml
-    ax_config.axs
   listener_nonameax_smb/
     listener_nonameax_smb.so
+    listener_nonameax_smb.axs
     config.yaml
-    ax_config.axs
   service_nax_store/
     nax_store.so
+    nax_store.axs
     config.yaml
-    ax_config.axs
 ```
+
+Copy each plugin directory (e.g. `agent_nonameax.{so,axs}` + `config.yaml` -> `~/AdaptixC2/dist/extenders/agent_nonameax/`), or point `SERVER_DIR` straight at `~/AdaptixC2/dist/extenders`.
 
 ### 2. Register Extenders in profile.yaml
 
-Adaptix only loads extenders that are explicitly listed in `Server/profile.yaml`. Add all NaX plugins:
+Adaptix only loads extenders that are explicitly registered in the teamserver's `profile.yaml`. Add all NaX plugins:
 
 ```yaml
 extenders:
@@ -285,10 +287,10 @@ This must be exactly 8 hex characters (4 bytes). It identifies NaX agents in the
 ### 4. Start the Teamserver
 
 ```bash
-cd Server && ./teamserver
+adaptixserver
 ```
 
-The teamserver loads all registered extender `.so` files on startup. After launch:
+Start (or restart, after copying new plugin files) the `adaptixserver` binary. The teamserver loads all registered extender `.so` files on startup. After launch:
 
 1. Open the Adaptix client and connect to the teamserver
 2. Create a listener (NoNameAxHTTP or NoNameAxSMB) through the Listeners panel
@@ -306,5 +308,5 @@ The teamserver loads all registered extender `.so` files on startup. After launc
 | Config-only rebuild | `make link` |
 | Build all plugins | `make -C src_server` |
 | Run plugin tests | `make -C src_server test` |
-| Deploy + start server | `make -C src_server && cd Server && ./teamserver` |
+| Deploy + restart server | `make -C src_server`, copy plugin files to `~/AdaptixC2/dist/extenders/`, restart `adaptixserver` |
 | Clean everything | `make clean && make -C src_server clean` |

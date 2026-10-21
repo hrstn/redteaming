@@ -36,6 +36,8 @@ Binary framed protocol. All frames are AES-128-CBC encrypted before transmission
 | `rmdir` | `0x17` | Remove directory |
 | `cat` | `0x18` | Read file contents |
 | `ls` | `0x19` | List directory (table or recursive tree) |
+| `cp` | `0x1A` | Copy a file |
+| `mv` | `0x1B` | Move or rename a file |
 | `bof` | `0x20` | Execute BOF (in-process COFF loader) |
 | `screenshot` | `0x21` | GDI desktop capture |
 | `download` | `0x22` | Download file from target to operator |
@@ -44,10 +46,20 @@ Binary framed protocol. All frames are AES-128-CBC encrypted before transmission
 | `ps run` | `0x25` | Run program (`-s` suspend, `-o` capture output) |
 | `upload` | `0x26` | Upload file from operator to target |
 | `rm` | `0x27` | Delete a file |
+| `savememory` | `0x2A` | Accumulate upload data chunks in memory |
+| `chunksize` | `0x2B` | Set download chunk size |
+| `watchdog` | `0x2C` | Toggle the async job watchdog |
 | `profile` | `0x30` | Update malleable C2 profile at runtime |
 | `bof-stomp` | `0x31` | Reconfigure BOF module stomping DLLs |
+| `sleepmask-set` | `0x32` | Rebuild + hot-load the sleepmask BOF |
+| `sleepobf-config` | `0x33` | Toggle sleep obfuscation |
 | `link smb` | `0x38` | Connect to child beacon's SMB pipe |
 | `unlink` | `0x39` | Disconnect a linked child beacon |
+| `dll-notify list` | `0x3A` | List DLL load notification callbacks |
+| `dll-notify remove` | `0x3B` | Remove DLL load notification callbacks |
+| `shell start` | `0x47` | Start remote shell (program path) |
+| `shell write` | `0x48` | Write input to a remote shell |
+| `shell close` | `0x49` | Close a remote shell |
 
 ### Token Commands (0x50--0x57)
 
@@ -106,22 +118,22 @@ Tunnel results use a concatenated entry format inside a single RESULT frame:
 ## TASK Frame Body
 
 ```
-+------------+-----------+------------------+
-| CmdId (1)  | TaskId (4)| Args (variable)  |
-+------------+-----------+------------------+
++--------------+-----------+------------------+------------------+
+| TaskId (4LE) | CmdId (1) | ArgsLen (4LE)    | Args (variable)  |
++--------------+-----------+------------------+------------------+
 ```
 
-`TaskId` is a random 32-bit integer assigned by the server. The beacon includes it in the RESULT frame so the server can match results to tasks.
+`TaskId` is a random 32-bit integer assigned by the server. The beacon includes it in the RESULT frame so the server can match results to tasks. `ArgsLen` is a 4-byte little-endian length prefix for the arguments that follow.
 
 ## RESULT Frame Body
 
 ```
-+------------+-----------+-----------+------------------+
-| CmdId (1)  | TaskId (4)| Status (1)| Output (variable)|
-+------------+-----------+-----------+------------------+
++--------------+------------+-----------------+------------------+
+| TaskId (4LE) | Status (1) | DataLen (4LE)   | Data (variable)  |
++--------------+------------+-----------------+------------------+
 ```
 
-`Status` is `0x00` for success, non-zero for errors. The output format depends on the command - most return UTF-8 text, some return structured binary (screenshots, downloads, BOF media).
+`Status` is `0x00` for success, non-zero for errors. `DataLen` is a 4-byte little-endian length prefix for the output that follows. The output format depends on the command - most return UTF-8 text, some return structured binary (screenshots, downloads, BOF media).
 
 ## Commands with Flags Byte
 

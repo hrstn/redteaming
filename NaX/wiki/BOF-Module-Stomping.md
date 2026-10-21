@@ -2,7 +2,7 @@
 
 BOF (Beacon Object File) execution normally allocates private memory with `PAGE_EXECUTE_READWRITE` for the BOF's `.text` section. Even when the beacon itself runs from image-backed memory via loader-phase module stomping, every BOF invocation creates a fresh private executable allocation -- a top indicator for EDR memory scanners. BOF module stomping eliminates this by running BOF code from the `.text` section of a pre-loaded sacrificial DLL, so execution happens from `IMAGE`-backed memory at `PAGE_EXECUTE_READ` with no RWX anywhere.
 
-This is distinct from [loader-phase module stomping](Module-Stomping), which stomps the beacon shellcode itself into a DLL at load time. BOF module stomping operates per-execution at runtime, stomping and restoring DLL content around each BOF call.
+This is distinct from [loader-phase module stomping](Module-Stomping.md), which stomps the beacon shellcode itself into a DLL at load time. BOF module stomping operates per-execution at runtime, stomping and restoring DLL content around each BOF call.
 
 ## Architecture Overview
 
@@ -25,9 +25,16 @@ This is distinct from [loader-phase module stomping](Module-Stomping), which sto
                       |  AsyncCount = 2               |
                       |  Initialized = TRUE           |
                       +-------------------------------+
+                      |  SmSlot                       |  <-- resident sleepmask slot
+                      |    (stomp kept alive so the   |
+                      |     sleepmask executes off    |
+                      |     image-backed .text)       |
+                      +-------------------------------+
+                      |  SmStompReq = 0/1             |  <-- routes next stomp op to SmSlot
+                      +-------------------------------+
 ```
 
-Each slot holds a handle to a sacrificial DLL loaded with `DONT_RESOLVE_DLL_REFERENCES` (no DllMain, no imports resolved). The sync slot serves the main heartbeat thread; async slots serve the BOF thread pool for concurrent `-a` (async) BOF jobs.
+Each slot holds a handle to a sacrificial DLL loaded with `DONT_RESOLVE_DLL_REFERENCES` (no DllMain, no imports resolved). The sync slot serves the main heartbeat thread; async slots serve the BOF thread pool for concurrent `-a` (async) BOF jobs. `SmSlot` is set aside on first use as the resident slot for the sleepmask so sleep-time code never executes from the beacon's own module; `SmStompReq` pins the next stomp operation to it.
 
 ### Data Structures
 
@@ -49,8 +56,11 @@ typedef struct {
 typedef struct {
     BOF_STOMP_SLOT SyncSlot;
     BOF_STOMP_SLOT AsyncSlots[ BOF_STOMP_ASYNC_MAX ];   /* max 4 */
+    BOF_STOMP_SLOT SmSlot;          /* dedicated resident sleepmask slot  */
     BYTE           AsyncCount;
     BYTE           Initialized;
+    BYTE           SmStompReq;      /* route next stomp op to SmSlot      */
+    BYTE           SyncStompSlotIdx;/* async idx when sync slot is home   */
 } BOF_STOMP_POOL;
 ```
 
@@ -307,6 +317,7 @@ sub_cmd(1 byte) | payload...
 | sync | `0x00` | `wchar_len(4LE)` + WCHAR bytes | Replace the sync DLL |
 | async | `0x01` | `count(1)` + `[wchar_len(4LE) + WCHAR bytes]...` | Replace entire async pool |
 | show | `0x02` | (empty) | Display current config and slot status |
+| sleepmask | `0x03` | `wchar_len(4LE)` + WCHAR bytes | Replace the dedicated sleepmask slot DLL and re-wire (`bof-stomp sleepmask <dll>`) |
 
 ### Sync swap
 

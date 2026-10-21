@@ -17,11 +17,11 @@ Module stomping sidesteps the heuristic entirely:
 | Appears in loaded module list | No | Yes (patched LDR entry) |
 | Stack walk | Start address = beacon | Start address = ntdll!TppWorkerThread |
 
-The `MODULE_STOMP=1` build (default) produces payloads that use image-backed memory. `MODULE_STOMP=0` falls back to `NtAllocateVirtualMemory` for testing or environments where module stomping is impractical.
+The `MODULE_STOMP=1` build (off by default; enable with `MODULE_STOMP=1`) produces payloads that use image-backed memory. `MODULE_STOMP=0` (default) falls back to `NtAllocateVirtualMemory` for testing or environments where module stomping is impractical.
 
 ## Compile-Time Configuration
 
-Technique selection is entirely compile-time, controlled by preprocessor defines passed through the Makefile. There are no runtime branches between stomp and virtual modes - the unused path is not compiled into the binary.
+Technique selection is entirely compile-time, controlled by preprocessor defines passed through the Makefile. There are no runtime branches between stomp and virtual modes - the unused path is not compiled into the binary. The payload-generation UI's Technique selection (Basic / Advanced / Custom) switches between loader source variants at build time: `src_loader` (plain) and `src_loader_adv` (indirect syscalls + TLS egg), driven by `NAX_STOMP_ADVANCED`.
 
 ### Makefile Variables
 

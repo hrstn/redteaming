@@ -46,15 +46,23 @@ Pick the next available ID. The current assignments are:
 | Range | Usage |
 |-------|-------|
 | `0x10`-`0x19` | Core commands (whoami, sleep, exit, fs ops) |
+| `0x1A`-`0x1B` | cp, mv |
 | `0x20`-`0x27` | BOF, screenshot, download, ps, upload, rm |
 | `0x28`-`0x29` | Job management |
-| `0x30`-`0x31` | Profile, BOF stomp |
+| `0x2A`-`0x2C` | savememory, chunksize, watchdog |
+| `0x30`-`0x33` | Profile, BOF stomp, sleepmask-set, sleepobf-config |
 | `0x37`-`0x39` | Pivot operations |
+| `0x3A`-`0x3B` | DLL notification list/remove |
+| `0x3E`-`0x46` | Tunnel commands |
+| `0x47`-`0x49` | Shell commands |
+| `0x50`-`0x57` | Token commands |
+
+The first genuinely free ID is `0x2D`, which the `hostname` example uses throughout this walkthrough.
 
 Add your constant after the existing block:
 
 ```c
-#define NAX_CMD_HOSTNAME     0x40u
+#define NAX_CMD_HOSTNAME     0x2Du
 ```
 
 **Important:** This value must match exactly on the Go side. There is no auto-sync -- you maintain both by hand.
@@ -64,7 +72,7 @@ Add your constant after the existing block:
 Add the matching constant in the `const` block alongside the other `CMD_*` values:
 
 ```go
-CMD_HOSTNAME byte = 0x40
+CMD_HOSTNAME byte = 0x2D
 ```
 
 The existing constants live in `pl_main.go` around line 33:
@@ -75,7 +83,7 @@ const (
     CMD_WHOAMI      byte = 0x10
     CMD_SLEEP       byte = 0x11
     // ...
-    CMD_HOSTNAME    byte = 0x40   // <-- add here
+    CMD_HOSTNAME    byte = 0x2D   // <-- add here
 )
 ```
 
@@ -111,7 +119,7 @@ FUNC INT NaxCmdXxx( PNAX_INSTANCE Nax, PBYTE out, UINT32* out_len );
 
 ```c
 /* beacon/src/Commands/Hostname.c
- * CMD_HOSTNAME (0x40) - return machine hostname as UTF-8. */
+ * CMD_HOSTNAME (0x2D) - return machine hostname as UTF-8. */
 
 #include "Macros.h"
 #include "Instance.h"
@@ -181,7 +189,7 @@ FUNC INT NaxCmdHostname( PNAX_INSTANCE Nax, PBYTE out, UINT32* out_len );
 Add a new `case` before the `default:` label. Follow the existing pattern:
 
 ```c
-    /* ---- CMD_HOSTNAME (0x40) ---- */
+    /* ---- CMD_HOSTNAME (0x2D) ---- */
     case NAX_CMD_HOSTNAME:
         *result_status = ( NaxCmdHostname( Nax, result_data, result_data_len ) == NAX_OK )
                              ? NAX_STATUS_OK : NAX_STATUS_ERR;
@@ -508,7 +516,8 @@ Only recompiles `Config.c` and re-links. Safe when you only changed `.c` files i
 cd src_server/agent_nonameax && make
 ```
 
-Copy the resulting `.so` to `Server/extenders/agent_nonameax/`.
+Copy the resulting `.so` (with `ax_config.axs` + `config.yaml`) to
+`~/AdaptixC2/dist/extenders/agent_nonameax/` and restart `adaptixserver`.
 
 ### Verify
 
@@ -526,20 +535,20 @@ Here is every file change collected in one place.
 ### Wire.h
 
 ```c
-#define NAX_CMD_HOSTNAME     0x40u
+#define NAX_CMD_HOSTNAME     0x2Du
 ```
 
 ### pl_main.go (constant)
 
 ```go
-CMD_HOSTNAME byte = 0x40
+CMD_HOSTNAME byte = 0x2D
 ```
 
 ### Hostname.c
 
 ```c
 /* beacon/src/Commands/Hostname.c
- * CMD_HOSTNAME (0x40) - return machine hostname as UTF-8. */
+ * CMD_HOSTNAME (0x2D) - return machine hostname as UTF-8. */
 
 #include "Macros.h"
 #include "Instance.h"
@@ -574,7 +583,7 @@ FUNC INT NaxCmdHostname( PNAX_INSTANCE Nax, PBYTE out, UINT32* out_len );
 ### Dispatch.c (switch case)
 
 ```c
-    /* ---- CMD_HOSTNAME (0x40) ---- */
+    /* ---- CMD_HOSTNAME (0x2D) ---- */
     case NAX_CMD_HOSTNAME:
         *result_status = ( NaxCmdHostname( Nax, result_data, result_data_len ) == NAX_OK )
                              ? NAX_STATUS_OK : NAX_STATUS_ERR;
@@ -694,7 +703,7 @@ char* msg = "hello";
 CHAR msg[] = { 'h', 'e', 'l', 'l', 'o', '\0' };
 ```
 
-**Mismatched command IDs.** If `Wire.h` says `0x40` but `pl_main.go` says `0x41`, the beacon will return results tagged with the wrong ID. The Go server will not find the `pendingCmdIds` entry, and the result will show as a generic "command failed" with no type-specific formatting.
+**Mismatched command IDs.** If `Wire.h` says `0x5A` but `pl_main.go` says `0x5B`, the beacon will return results tagged with the wrong ID. The Go server will not find the `pendingCmdIds` entry, and the result will show as a generic "command failed" with no type-specific formatting.
 
 **Forgetting `pendingCmdIds`.** The server stores the command ID byte when packing tasks (in `PackTasks`). If your `CreateCommand` case sets `Data[0]` to the wrong value, result parsing will route to the wrong handler.
 

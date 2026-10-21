@@ -10,6 +10,7 @@ Every beacon function accesses state through a pointer to `NAX_INSTANCE`, stored
 |-------|---------|
 | `SessionId[17]` | 16 hex chars + NUL, generated at boot |
 | `Config` (NAX_CONFIG) | All runtime-configurable fields: sleep, jitter, AES key, C2 URL, profile, BOF stomp settings |
+| `KillDate` | UINT32 unix-UTC expiry seconds; `0` = never |
 | `Heap` | Private heap for all beacon allocations |
 | `hSession` / `hConnect` | Persistent WinHTTP handles, reused across heartbeats |
 | `Ntdll`, `Kernel32`, `Bcrypt`, `Winhttp`, ... | DLL bundles - each holds only resolved function pointers from that DLL |
@@ -73,6 +74,10 @@ The heartbeat loop runs forever. Each cycle:
 2. Checks in with the C2 (GET for heartbeat, POST if there are pending results)
 3. Processes any queued tasks synchronously (or dispatches to the async job pool for BOFs with `-a`)
 4. Sends results back immediately after each command completes
+
+### Kill Date and Memory Hygiene
+
+When `NAX_KILL_DATE` is nonzero (unix-UTC seconds baked into the config) and the current time has reached it, the beacon wipes its private config span and exits. The check runs at the head of the transport loops - the HTTP register-retry and heartbeat loops, and the SMB accept loop. As memory hygiene, the private config span and the plaintext IO/task buffers are zeroed before each dwell cycle; the env/resp buffers hold ciphertext only.
 
 ### Tunnel Processing
 
