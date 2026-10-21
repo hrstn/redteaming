@@ -45,9 +45,14 @@ function GenerateUI(listeners_type)
         container.put("jitter", spinJitter);
     }
 
+    let textKillDate = form.create_textline("");
+    textKillDate.setPlaceholder("YYYY-MM-DD, empty = never");
+    tab1.addWidget(form.create_label("Kill date:"), t1r, 0); tab1.addWidget(textKillDate, t1r, 1); t1r++;
+    container.put("kill_date", textKillDate);
+
     let comboFormat = form.create_combo();
     comboFormat.addItems(["Bin", "Exe", "Dll", "Svc"]);
-    let textSvcName = form.create_textline("NaxService");
+    let textSvcName = form.create_textline("WinSvcAssist");
     textSvcName.setEnabled(false);
     let textDllExport = form.create_textline("Runner");
     textDllExport.setEnabled(false);
