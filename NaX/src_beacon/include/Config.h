@@ -74,3 +74,7 @@
 
 /* ---- DLL notification unhooking ---- */
 #define NAX_UNHOOK_DLL_NOTIFY 1
+
+/* ---- embedded sleepmask BOF ---- */
+#define NAX_SLEEPMASK_LEN  5100u
+#include "Config_sleepmask.h"
