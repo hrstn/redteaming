@@ -115,8 +115,7 @@ remote_bof_loader/
 │   └── bofloader.exe          # compiled loader
 ├── scripts/
 │   ├── build.py               # MinGW cross-compile helper
-│   ├── gen_hashes.py          # regenerate src/hashes.h
-│   └── test_bof.py            # build + canonical static-signature check
+│   └── gen_hashes.py          # regenerate src/hashes.h
 ├── src/
 │   ├── bofloader.h            # types, structs, function declarations
 │   ├── hashes.h               # generated FNV1a-32 API hashes

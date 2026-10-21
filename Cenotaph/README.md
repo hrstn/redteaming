@@ -17,8 +17,10 @@ src/Utils.c         # zero/hex helpers
 src/Host.c          # crypto block (ChaCha20 + SHA-256 + HMAC) + host flow
 tools/encrypt.py    # packs a raw payload.bin into the .dat, rotates CenKey.h
 tools/sha_probe.py  # deviation-knob brute-forcer for a wrong SHA-256 digest
-scripts/validate.py # static audit: zero imports / no API strings
 ```
+
+Static audit is repo-wide: `../hostpayload_v2/scripts/validate.py`
+(signature + import scan; `--snapshot <dump>` for memory dumps).
 
 ## The .dat format
 

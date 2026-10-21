@@ -98,7 +98,7 @@ quarantined — that's H1's expected result.
 | H1 | stock bacon (normalbacon.exe / normal.exe) | (at rest, WSL share scan) | `Backdoor:Win64/AdaptixC2.MKA!MTB` | — | **SIGNATURED** — the real burn; caught at rest, status REMOVED |
 | H2 | nax.exe (release) | idle / running | (none) | — | **CLEAN** — no detection on the binary or at runtime |
 | H3 | nax.exe | flat `ls C:\` | (none) | — | **CLEAN** at CloudBlockLevel=High (0 detections, 0 events) |
-| H4 | nax.exe | tree `ls C:\` (depth-16) | N/A | N/A | **UNREACHABLE** — NoNameAx client `ls` is flat-only (no recursive bool, unlike `rmdir -rf`); tree mode (`flags & 0x01`) is dead code |
+| H4 | nax.exe | tree `ls C:\` (depth-16) | (not run) | — | **UNTESTED — old verdict void.** The 2026-08-21 build ran a client whose tree mode was dead code; the current client implements tree (`flags & 0x01` routes to the recursive writer, depth 16), so the experiment is reachable and must be re-run |
 | H5 | nax.exe | BOF `privcheck all` (309 KB COFF) | (none) | — | **CLEAN** at CloudBlockLevel=High (0 detections, 0 events; also clean at Level 0). Beacon survived. |
 | H6 | nax.exe | Start-MpScan (memory scan) | (not run) | — | deferred — nax.exe is a normal process (CRT-linked EXE, not UDRL-stomped); no static sig so memory scan unlikely to fire |
 
@@ -127,3 +127,27 @@ Tamper-protected → combos isolated by `InitialDetectionTime` windowing, not hi
 - **Residual (can't resolve without the lab box):** the exact lab ThreatName +
   whether the lab was stricter-than-High or used a debug build. If a lab box with
   admin becomes available, re-run H3/H5 there at the lab's real posture to confirm.
+
+## Behavioral lane — later evidence (2026-10-17, live Defender host)
+
+The static-string conclusions above (H1/H2/H3/H5) hold unchanged, but a second
+detection lane exists that this matrix never probed: **behavioral correlation**.
+
+- Idle NaX beacon + benign BOF (`whoami`) sustained zero detections for a full
+  run session — the at-rest/behavior posture is clean.
+- Running a credential-access BOF (mass cross-process memory sweeps of browser
+  processes, DPAPI access, SYSTEM token use) produced
+  **`Behavior:Win32/AdaptixC2.A`** — a behavior-family verdict naming the C2
+  framework. Nothing was written to disk; the BOF is memory-only. The verdict
+  attributes the *host process* (the beacon) to the framework based on elevated
+  host-process threat score from credential-behavior volume.
+- Fix path validated: credential BOFs must prefer quiet credential paths
+  (in-process COM, explicit-id DPAPI) and treat cross-process injection /
+  memory-sweep modes as an announced last resort. With the quiet invocation
+  order, the same BOF runs clean while the beacon dwells.
+
+**Implication for the matrix:** any future on-box run needs a behavioral column
+(cross-process open/read volume, token operations, DPAPI events), not just the
+static-sig snapshot. H4 (tree `ls`) and H6 (memory scan at rest) remain open,
+and H5's "BOF = clean" verdict is now scoped: **benign-BOF clean,
+credential-behavior BOF = the current detection boundary.**

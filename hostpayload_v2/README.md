@@ -77,20 +77,16 @@ hostpayload_v2/
     dropper_template.c      self-contained C dropper template
   scripts/
     build.py                standalone MinGW compile helper
-    validate.py             static scan for signatures and bad patterns
-  tests/
-    test_crypto.py          ChaCha20 + HMAC roundtrip tests
-  delivery/
-    hta.py                  HTA wrapper generator
-    vba.py                  VBA macro dropper wrapper
-    iso_lnk.py              ISO + LNK wrapper generator
-  scripts/
-    build.py                standalone MinGW compile helper
+    build_all.py            full end-to-end regeneration + validation
     validate.py             static scan for signatures and bad patterns
     sc.py                   self-decrypting x64 PIC shellcode generator
   tests/
     test_crypto.py          ChaCha20 + HMAC roundtrip tests
     test_benign.py          benign 3-byte payload generator for VM tests
+  delivery/
+    hta.py                  HTA wrapper generator
+    vba.py                  VBA macro dropper wrapper
+    iso_lnk.py              ISO + LNK wrapper generator
   build/                    generated output (ignored by git)
 ```
 
@@ -154,8 +150,8 @@ Use `--blob` to write the server-side `nonce || ciphertext || hmac` blob for sta
 ### Example output sizes
 
 ```text
-dropper_embed.exe     101 888 bytes   (carries full encrypted nax_adv.x64.bin)
-dropper_staged.exe      3 072 bytes   (fetches encrypted blob at runtime)
+dropper_embed.exe     109 056 bytes   (carries full encrypted nax_adv.x64.bin)
+dropper_staged.exe      7 680 bytes   (fetches encrypted blob at runtime)
 ```
 
 ---
@@ -168,6 +164,10 @@ Run the static scanner on any generated source or EXE:
 python3 scripts/validate.py build/dropper.exe
 python3 scripts/validate.py build/dropper.c
 ```
+
+`--snapshot <dump>` scans a beacon process memory dump for identity material —
+C2 URL / UA / header names in ASCII and UTF-16, raw AES key bytes, optional
+RWX patterns. This is the W1.4 verification harness; clean = exit 0.
 
 The scanner flags AMSI/ETW strings, PowerShell injection APIs, RWX allocation
 patterns, plaintext HTTP URLs, and toy-cipher mentions. Legitimate bit-rotation
