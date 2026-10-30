@@ -109,3 +109,6 @@ Spiritual-Spell-Red-Teaming-main.backup.zip
 REDTEAMING_AUDIT.md
 C2-Tool-Collection/BOF-IDEAS-*.md
 C2-Tool-Collection/*roadmap*.md
+
+# --- Compiled COFF objects (regenerable via each suite's Makefile) ---
+*.o
