@@ -4,6 +4,11 @@ A **native C#** re-implementation of selected [PrivescCheck](https://github.com/
 checks plus a Windows hardening/configuration audit, compiled with **NativeAOT** to a single
 true-native `.exe` (~3.4 MB).
 
+> **Attribution & license:** selected checks are re-implemented from
+> [PrivescCheck](https://github.com/itm4n/PrivescCheck) by Clément Labro, licensed under the
+> BSD 3-Clause License (see [`LICENSE`](./LICENSE)). This derivative keeps the same license
+> and is not affiliated with or endorsed by the original author.
+
 Why native AOT (not the original self-contained single-file build):
 - **No IL to reflectively scan** — there is no managed assembly for AMSI/AV to introspect.
 - **No single-file temp extraction** — the original build dropped bundled files to

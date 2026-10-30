@@ -18,7 +18,12 @@ Personal red-team toolkit. Two themes:
 | `C2-Tool-Collection/` | Fork of [Outflank's C2-Tool-Collection](https://github.com/outflanknl/C2-Tool-Collection) ported to Adaptix AxScript (`.axs`), with extra BOFs (e.g. RBCD). OSEP/CRTO/CRTL coverage. |
 | `BOFKatz/` | In-memory Mimikatz-as-a-BOF (process hollowing + argument spoofing). |
 | `GodPotatoBOF/` | BOF port of [GodPotato](https://github.com/BeichenDream/GodPotato) (Windows potato privilege escalation). |
+| `CS-Remote-OPs-BOF/` | Vendored copy of [TrustedSec's CS-Remote-OPs-BOF](https://github.com/trustedsec/CS-Remote-OPs-BOF) (GPLv2) — remote-execution BOFs (process injection, remote execution). |
 | `OSEP-ENUM/` | BOF port of `OSEP_enum.ps1` — single-pass local host enum, no child processes / no PowerShell. |
+| `OSAI-ENUM/` | Port of [`OSEP-ENUM`](./OSEP-ENUM) retuned for OSAI (AI-300) labs — the eight enum sections plus four AI-quick-win sections. |
+| `OSAI-LINUX/` | Three-tool static-Linux kit for the AdaptixC2 gopher agent (OSAI labs): local enum, AI-service discovery, pickle RCE. |
+| `PrivescCheckExe/` | Native C# (NativeAOT) re-implementation of selected [PrivescCheck](https://github.com/itm4n/PrivescCheck) checks plus a Windows hardening audit (BSD-3-Clause). |
+| `ai-pentesting/` | Reference notes: AI-pentesting service overview (2026). |
 | `RemoteLoader/` | In-memory loader for .NET assemblies and x64 COFF/BOF objects, pulled over HTTPS from a GitHub repo (nothing touches disk). |
 | `hostpayload/` | AdaptixPowerShell — PowerShell payload obfuscator/encryptor (.exe ↔ shellcode via Donut, AMSI bypass). |
 | `NaX/` | Local fork of the AdaptixC2 framework: custom beacon (`src_beacon`), loaders (`src_loader`, `src_loader_adv`), sleepmask (`src_sleepmask`), and the Go server plugin (`src_server/agent_nonameax`). Architecture, build/deploy, and wire protocol live in `NaX/wiki/`. |
