@@ -15,8 +15,8 @@ Personal red-team toolkit. Two themes:
 | Path | What it is |
 |---|---|
 | `Extension-Kit/` | Vendored copy of the [AdaptixC2 Extension-Kit](https://github.com/Adaptix-Framework/Extension-Kit) (GPLv3) — see below. **Our active BOF build tree.** |
-| `C2-Tool-Collection/` | Fork of [Outflank's C2-Tool-Collection](https://github.com/outflanknl/C2-Tool-Collection) ported to Adaptix AxScript (`.axs`), with extra BOFs (e.g. RBCD). OSEP/CRTO/CRTL coverage. |
-| `BOFKatz/` | In-memory Mimikatz-as-a-BOF (process hollowing + argument spoofing). |
+| `C2-Tool-Collection/` | Adaptix AxScript (`.axs`) port of [Outflank's C2-Tool-Collection](https://github.com/outflanknl/C2-Tool-Collection), © the OutflankNL authors (upstream ships no license file), with extra original BOFs (e.g. RBCD). OSEP/CRTO/CRTL coverage. |
+| `BOFKatz/` | In-memory Mimikatz-as-a-BOF (process hollowing + argument spoofing). Port of [KrakenEU/BOFKatz](https://github.com/KrakenEU/BOFKatz), © KrakenEU — ported here for AdaptixC2 without modification to its licensing terms (upstream ships no license file; see `BOFKatz/Readme.md`). |
 | `GodPotatoBOF/` | BOF port of [GodPotato](https://github.com/BeichenDream/GodPotato) (Windows potato privilege escalation). |
 | `CS-Remote-OPs-BOF/` | Vendored copy of [TrustedSec's CS-Remote-OPs-BOF](https://github.com/trustedsec/CS-Remote-OPs-BOF) (GPLv2) — remote-execution BOFs (process injection, remote execution). |
 | `OSEP-ENUM/` | BOF port of `OSEP_enum.ps1` — single-pass local host enum, no child processes / no PowerShell. |
@@ -30,6 +30,15 @@ Personal red-team toolkit. Two themes:
 | `Cenotaph/` | Zero-import disk host for NaX payloads: PEB-resolves its APIs, reads `<exe-stem>.dat` (ChaCha20 + HMAC-SHA256 blob), verifies + decrypts, RW→RX, hands off to the payload. `Cenotaph/README.md`. |
 | `hostpayload_v2/` | Hardened delivery-payload generator: drop-and-stomp droppers with decryptor shellcode, fetch mode, delivery wrappers (ISO/LNK/HTA), test harness + build gates. `hostpayload_v2/README.md`. |
 | `remote_bof_loader/` | Importless native x64 in-memory COFF/BOF loader (a PS1 cradle fetches the object, the loader BOF runs it). `remote_bof_loader/README.md`. |
+
+## Attribution notes
+
+- `BOFKatz/` ports [KrakenEU/BOFKatz](https://github.com/KrakenEU/BOFKatz) © KrakenEU. The upstream
+  ships no license file; the port is published here with full credit (`BOFKatz/Readme.md`). Do not
+  redistribute this directory without the corresponding credit.
+- `C2-Tool-Collection/` ports [OutflankNL/C2-Tool-Collection](https://github.com/outflanknl/C2-Tool-Collection)
+  © the OutflankNL authors. The upstream ships no license file; upstream credits and tool links are
+  preserved throughout the port.
 
 ## Extension-Kit (vendored)
 
