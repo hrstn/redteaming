@@ -16,7 +16,7 @@ Personal red-team toolkit. Two themes:
 |---|---|
 | `Extension-Kit/` | Vendored copy of the [AdaptixC2 Extension-Kit](https://github.com/Adaptix-Framework/Extension-Kit) (GPLv3) — see below. **Our active BOF build tree.** |
 | `C2-Tool-Collection/` | Adaptix AxScript (`.axs`) port of [Outflank's C2-Tool-Collection](https://github.com/outflanknl/C2-Tool-Collection), © the OutflankNL authors (upstream ships no license file), with extra original BOFs (e.g. RBCD). OSEP/CRTO/CRTL coverage. |
-| `BOFKatz/` | In-memory Mimikatz-as-a-BOF (process hollowing + argument spoofing). Port of [KrakenEU/BOFKatz](https://github.com/KrakenEU/BOFKatz), © KrakenEU — ported here for AdaptixC2 without modification to its licensing terms (upstream ships no license file; see `BOFKatz/Readme.md`). |
+| `BOFKatz/` | **[RETIRED — do not build/ship]** In-memory Mimikatz-as-a-BOF (process hollowing + argument spoofing). Port of [KrakenEU/BOFKatz](https://github.com/KrakenEU/BOFKatz), © KrakenEU — ported here for AdaptixC2 without modification to its licensing terms (upstream ships no license file; see `BOFKatz/Readme.md`). |
 | `GodPotatoBOF/` | BOF port of [GodPotato](https://github.com/BeichenDream/GodPotato) (Windows potato privilege escalation). |
 | `CS-Remote-OPs-BOF/` | Vendored copy of [TrustedSec's CS-Remote-OPs-BOF](https://github.com/trustedsec/CS-Remote-OPs-BOF) (GPLv2) — remote-execution BOFs (process injection, remote execution). |
 | `OSEP-ENUM/` | BOF port of `OSEP_enum.ps1` — single-pass local host enum, no child processes / no PowerShell. |
@@ -25,8 +25,11 @@ Personal red-team toolkit. Two themes:
 | `PrivescCheckExe/` | Native C# (NativeAOT) re-implementation of selected [PrivescCheck](https://github.com/itm4n/PrivescCheck) checks plus a Windows hardening audit (BSD-3-Clause). |
 | `ai-pentesting/` | Reference notes: AI-pentesting service overview (2026). |
 | `RemoteLoader/` | In-memory loader for .NET assemblies and x64 COFF/BOF objects, pulled over HTTPS from a GitHub repo (nothing touches disk). |
-| `hostpayload/` | AdaptixPowerShell — PowerShell payload obfuscator/encryptor (.exe ↔ shellcode via Donut, AMSI bypass). |
+| `hostpayload/` | **[RETIRED — do not build/ship]** AdaptixPowerShell — PowerShell payload obfuscator/encryptor (.exe ↔ shellcode via Donut, AMSI bypass). Superseded by `hostpayload_v2/`. |
 | `NaX/` | Local fork of the AdaptixC2 framework: custom beacon (`src_beacon`), loaders (`src_loader`, `src_loader_adv`), sleepmask (`src_sleepmask`), and the Go server plugin (`src_server/agent_nonameax`). Architecture, build/deploy, and wire protocol live in `NaX/wiki/`. |
+| `profiler/` | **OPSEC profile generator** (standalone): persona-based malleable agent-interaction profiles (Graph / OneDrive) emitting paste-ready NaX v2 profile JSON, with a built-in validator for the beacon's hard parser caps. Shared comms hygiene for the whole chain. |
+| `tools/` | Repo-wide opsec merge gate (`opsec_scan.py`, used by `make audit` / `make history`) + COFF integrity manifest (`coff_manifest.py`). Exceptions documented in `tools/opsec_scan_exceptions.txt`. |
+| `RUNBOOK.md` | Operational notes: deploy chain (profile → listener → build → delivery), session gates, persistence install/clear rule, burn response. |
 | `Cenotaph/` | Zero-import disk host for NaX payloads: PEB-resolves its APIs, reads `<exe-stem>.dat` (ChaCha20 + HMAC-SHA256 blob), verifies + decrypts, RW→RX, hands off to the payload. `Cenotaph/README.md`. |
 | `hostpayload_v2/` | Hardened delivery-payload generator: drop-and-stomp droppers with decryptor shellcode, fetch mode, delivery wrappers (ISO/LNK/HTA), test harness + build gates. `hostpayload_v2/README.md`. |
 | `remote_bof_loader/` | Importless native x64 in-memory COFF/BOF loader (a PS1 cradle fetches the object, the loader BOF runs it). `remote_bof_loader/README.md`. |
@@ -98,7 +101,54 @@ the beacon thread as the hash-user (mirrors `token make`); with a binary it spaw
 that binary as the hash-user (network logon — reaches SMB/etc as them). MITRE
 **T1550.002**. Details: [`Extension-Kit/LateralMovement-BOF/pth/README.md`](./Extension-Kit/LateralMovement-BOF/pth/README.md).
 
+#### Persistence-BOF — persistence primitives + kit-wide inventory  *(new, not in upstream)*
+
+In-process COM/registry persistence with paired cleanup: `wmi-sub`/`wmi-clear`
+(permanent WMI event subscription, boot trigger), `task-create`/`task-delete`
+(in-process COM `RegisterTask`, per-run random task-name suffix, no schtasks
+child), `runkey`, `comhijack` (HKCU InprocServer32, user keys only), and a
+read-only `persist-inventory` sweep (Run keys, startup folders, all four WMI
+subscription classes, task tree, non-system service binaries, IFEO overrides,
+Winlogon). OPSEC contract: install → verify → use → clear → verify zero in
+`persist-inventory`. Telemetry per command documented in
+[`Extension-Kit/Persistence-BOF/README.md`](./Extension-Kit/Persistence-BOF/README.md).
+
+#### Capture-BOF — in-process input capture  *(new, not in upstream)*
+
+`clipmon` (clipboard poll, no hooks / no window chain) and `keylog`
+(`GetAsyncKeyState` poll decoded via `ToUnicode`) — one worker thread in the
+beacon process, own-process only, output via the task result channel, no disk
+writes. Short windows by design; never paired with unattended persistence.
+Details: [`Extension-Kit/Capture-BOF/README.md`](./Extension-Kit/Capture-BOF/README.md).
+
 ## Building
+
+### Retired & restricted components (verdicts of the 2026-11-04 OPSEC audit — internal notes, kept out of the repo)
+
+**Retired (2026-11-04 audit verdict — do not build, do not ship, marked in-place with `RETIRED.md`):**
+
+| Path | Reason |
+|---|---|
+| `hostpayload/` | Signatured `amsiInitFailed` bypass + RWX + CreateThread in every generated loader — superseded by `hostpayload_v2/` |
+| `C2-Tool-Collection/Loaders/RemoteLoader/` | **Deleted** — stale divergent copy that in-process patched AMSI + ETW on every run; the hardened loader lives at `RemoteLoader/` (repo root) |
+| `NaX/src_loader/` | Basic loader superseded by `NaX/src_loader_adv/` (Stardust: clean-ntdll, module stomp, threadpool exec) |
+
+**Kept as-is (accepted risk, operator decision 2026-11-04):**
+
+| Path | Standing |
+|---|---|
+| `BOFKatz/` | Kept unchanged per operator decision. Full Mimikatz PE in memory + svchost hollowing remain its detection surfaces (internal audit notes, CRITICAL). Use with that knowledge; quiet in-process paths (`nanodump`, `pth`, `lsadump`, Kerbeus) remain the default credential route |
+
+**Restricted — keep, prefer alternatives, never ship on a default profile:**
+
+| Path | Restriction |
+|---|---|
+| `C2-Tool-Collection/BOF-Sources/WdToggle/` | Patches live lsass Wdigest/CredGuard fields (`WdToggle.c:96-193`) — CRITICAL; use quiet credential paths instead |
+| `Other/PetitPotam/` RDLL variant | Verbatim Stephen Fewer reflective loader + `ExitProcess(0)` host kill (`ReflectiveLoader.h:42-48`, `ReflectiveDll.c:156`) — rebuild on the NaX loader per fix plan; BOF variant (`BOF-Sources/PetitPotam/`) fine |
+| `Injection-BOF/inject_32to64/` | RWX end-to-end — use `inject_poolparty` or `inject_cfg` |
+| `Execution-BOF/execute-assembly/` | Byte-patches ETW through an RWX flip — use `No-Consolation` (HWBP console) |
+| `Elevation-BOF/potato-dcom/` | `NetUserAdd` + admin-group add on success — account-creation burst alert; prefer `pth`-based token paths |
+| `CS-Remote-OPs-BOF/src/Injection/` legacy classes (clipboard, dde, ctray, svcctrl, tooltip, uxsubclassinfo, kernelcallbacktable) | Superseded by `inject_poolparty` / `inject_cfg` / `No-Consolation` |
 
 ```bash
 # Extension-Kit (all suites + our additions)

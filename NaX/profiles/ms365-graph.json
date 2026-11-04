@@ -20,11 +20,11 @@
 
       "get": {
         "uri": [
-          "/nax/v1.0/me/presence",
-          "/nax/v1.0/me/messages",
-          "/nax/v1.0/me/calendar/events",
-          "/nax/v1.0/me/drive/recent",
-          "/nax/beta/me/outlook/masterCategories"
+          "/v1.0/me/presence",
+          "/v1.0/me/messages",
+          "/v1.0/me/calendar/events",
+          "/v1.0/me/drive/recent",
+          "/beta/me/outlook/masterCategories"
         ],
         "client": {
           "headers": {
@@ -71,10 +71,10 @@
 
       "post": {
         "uri": [
-          "/nax/v1.0/me/drive/items/root:/Documents/sync.tmp:/createUploadSession",
-          "/nax/v1.0/me/drive/items/root:/Documents/telemetry.dat:/content",
-          "/nax/v1.0/me/sendMail",
-          "/nax/beta/me/todo/lists/tasks"
+          "/v1.0/me/drive/items/root:/Documents/sync.tmp:/createUploadSession",
+          "/v1.0/me/drive/items/root:/Documents/telemetry.dat:/content",
+          "/v1.0/me/sendMail",
+          "/beta/me/todo/lists/tasks"
         ],
         "client": {
           "headers": {

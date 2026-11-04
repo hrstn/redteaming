@@ -148,6 +148,11 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		if jitterPct > 100 {
 			jitterPct = 0
 		}
+		if _, ok := agentCfg["jitter"]; !ok {
+			// OPSEC default: a zero-jitter metronomic beacon is the primary
+			// network-analytics tell. 20% unless the operator set it explicitly.
+			jitterPct = 20
+		}
 
 		profCfg := parseProfileFromListenerConfig(listenerCfg)
 		if len(profCfg.Hosts) == 0 {

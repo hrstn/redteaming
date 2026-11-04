@@ -202,9 +202,6 @@ FUNC INT NaxHttpPost( PNAX_INSTANCE Nax, const PWCHAR url_w, const PCHAR sid, co
         CHAR ct[] = { 'C','o','n','t','e','n','t','-','T','y','p','e',':',' ','a','p','p','l','i','c','a','t','i','o','n','/','o','c','t','e','t','-','s','t','r','e','a','m','\0' };
         wi = NaxAppendAsciiW( ct, hdrs, wi, 4096 );
         wi = NaxAppendCRLF( hdrs, wi, 4096 );
-        CHAR hdr_p[] = { 'X','-','N','a','X','-','P','u','b','l','i','c',':',' ','1','\0' };
-        wi = NaxAppendAsciiW( hdr_p, hdrs, wi, 4096 );
-        wi = NaxAppendCRLF( hdrs, wi, 4096 );
         hdrs[ wi ] = L'\0';
     }
 
@@ -328,9 +325,6 @@ FUNC INT NaxHttpGet( PNAX_INSTANCE Nax, const PWCHAR url_w, const PCHAR sid, con
         CHAR cn[] = { '_','_','s','e','s','s','i','o','n','=','\0' };
         wi = NaxAppendAsciiW( cn, hdrs, wi, 4096 );
         wi = NaxAppendAsciiW( meta_enc, hdrs, wi, 4096 );
-        wi = NaxAppendCRLF( hdrs, wi, 4096 );
-        CHAR hdr_p[] = { 'X','-','N','a','X','-','P','u','b','l','i','c',':',' ','1','\0' };
-        wi = NaxAppendAsciiW( hdr_p, hdrs, wi, 4096 );
         wi = NaxAppendCRLF( hdrs, wi, 4096 );
         hdrs[ wi ] = L'\0';
     }

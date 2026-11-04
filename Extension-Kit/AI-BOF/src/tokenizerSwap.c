@@ -92,6 +92,14 @@ void go(char* args, int alen) {
   char* vocab = BeaconDataExtract(&p, NULL);
   char* tok = BeaconDataExtract(&p, NULL);
   int dry = BeaconDataInt(&p);
+  /* OPSEC: default to preview. Writes (CREATE_ALWAYS on two config files)
+   * are explicit: pass dryRun=0 AND confirm=1 to apply, so a truncated or
+   * stale arg buffer can never clobber vocab/tokenizer files by accident. */
+  int confirm = BeaconDataInt(&p);
+  if (!dry && !confirm) {
+    BeaconPrintf(CALLBACK_OUTPUT, "[opsec] dryRun=0 without confirm=1 -> running as preview (nothing written)\n");
+    dry = 1;
+  }
   if (!vocab || !*vocab || !tok || !*tok) {
     BeaconPrintf(CALLBACK_ERROR, "usage: tokenizerSwap <vocab.json> <tokenizer.json> [dryRun]\n");
     return;

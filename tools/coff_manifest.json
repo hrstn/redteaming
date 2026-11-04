@@ -1,0 +1,135 @@
+{
+ "generated": "2026-11-04T11:31:32Z",
+ "coffs": [
+  {
+   "path": "Extension-Kit/AD-BOF/_bin/adws_search.x64.o",
+   "size": 50620,
+   "sha256": "4efe6ec9e2932312afeb771a4f7607d970369702047932b07804975f813f3e13"
+  },
+  {
+   "path": "Extension-Kit/AD-BOF/_bin/badtakeover.x64.o",
+   "size": 3772,
+   "sha256": "60601613a3f1be046e3a1ad2be829345b9915534c9db38f8cd5aebea9d1089ba"
+  },
+  {
+   "path": "Extension-Kit/AD-BOF/_bin/dcsync-all.x64.o",
+   "size": 31663,
+   "sha256": "f7b79f72a35505b16c49b3b64e5ac3bf48dc52efbfb9cbece2d02140007f5b58"
+  },
+  {
+   "path": "Extension-Kit/AD-BOF/_bin/dcsync-single.x64.o",
+   "size": 29975,
+   "sha256": "abfa8d146bf2c27112b8967344432f60b9a541811baef27dd976793959c73d34"
+  },
+  {
+   "path": "Extension-Kit/AD-BOF/_bin/ldapsearch.x64.o",
+   "size": 13810,
+   "sha256": "8adfd24ab6415974d6fac73c6eabf78c5539413e2f4efbd8e0862f8e4a92ea6b"
+  },
+  {
+   "path": "Extension-Kit/AD-BOF/_bin/readlaps.x64.o",
+   "size": 7393,
+   "sha256": "fa5afe754e4003a709becef9064d142cb4838c8b16bc0c771868c6cf13347a8a"
+  },
+  {
+   "path": "Extension-Kit/AD-BOF/_bin/webdav_enable.x64.o",
+   "size": 1092,
+   "sha256": "a50e534c6470c9146afeb9bb4401095507a057c6f730950353937a0879771d0c"
+  },
+  {
+   "path": "Extension-Kit/AD-BOF/_bin/webdav_status.x64.o",
+   "size": 1554,
+   "sha256": "74f156db72f8964b6364e0430980caaf07b6cbdf88aa59ac62c20c6e3967aa2f"
+  },
+  {
+   "path": "Extension-Kit/Capture-BOF/_bin/clipmon.x64.o",
+   "size": 3282,
+   "sha256": "df3bbd8a940bedc902b02021befac4f71ceabb7c103927be872e74ae7f794871"
+  },
+  {
+   "path": "Extension-Kit/Capture-BOF/_bin/clipmon.x86.o",
+   "size": 3476,
+   "sha256": "001d112c7e90e60b5fede6a9e410409b1403d95eda970197e290ce289877bab3"
+  },
+  {
+   "path": "Extension-Kit/Capture-BOF/_bin/keylog.x64.o",
+   "size": 3447,
+   "sha256": "ef4045a384417aed8c59b007515337ad50bc66f5cbb4e0f273d5c049485773ee"
+  },
+  {
+   "path": "Extension-Kit/Capture-BOF/_bin/keylog.x86.o",
+   "size": 3492,
+   "sha256": "f22a5d54988daf7b5d2d056ffb2308837569375fd245f304b79b3a589e1518ce"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/comhijack.x64.o",
+   "size": 2062,
+   "sha256": "fa11a862d0cdcb5ca83a8746f03037febb4cfaaa366e4b22a7856ecf78ffc544"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/comhijack.x86.o",
+   "size": 2127,
+   "sha256": "1265fd8b802c59a1aa9a8cc39695fa5f59b9e8f06e586c002c7595015ebdced5"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/persist_inventory.x64.o",
+   "size": 10031,
+   "sha256": "88570d0eed87ca3ac88355680a2742fd5b5a029cb083788bb10c42549856277e"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/persist_inventory.x86.o",
+   "size": 10405,
+   "sha256": "0b2ecb2a6b3d4215526c874dc10aca274307fb3387bc822262c90123f69b9d66"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/runkey.x64.o",
+   "size": 2215,
+   "sha256": "0567eed618292ef551ce1f21fa261bb58b0dac6a1edd7344151e1994602a72bc"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/runkey.x86.o",
+   "size": 2239,
+   "sha256": "904285f345a7b900137ce2e3971c97a7df8ef198df0a8f2c0855beca8dab5af8"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/taskcreate.x64.o",
+   "size": 4189,
+   "sha256": "8137d2b29b5ab0e6a9e1e55784f6a620e967c2b4a7a669ace22dc152a8e53581"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/taskcreate.x86.o",
+   "size": 4299,
+   "sha256": "7968c8b827f8e92fe09b130d8335d678a17dcd41d0ebed09f1325f0f6d32f827"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/taskdelete.x64.o",
+   "size": 2364,
+   "sha256": "2d721897ac9d9fc22b51916481dde3513449837feefbc94b1f847e39af4d96b0"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/taskdelete.x86.o",
+   "size": 2450,
+   "sha256": "b20960d8049bb06d10fd4b44707f5a36985f321a0e500a5b7abb9a7896494b4b"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/wmiclear.x64.o",
+   "size": 2750,
+   "sha256": "bb7f1e7cc72432a5520321b8a29ec1e058ef3ccf62d65bcb3a3a524913ae3a17"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/wmiclear.x86.o",
+   "size": 2810,
+   "sha256": "1cb8eb2e07dbaf6b14de590d40e3a3aaf231cedf3526b39dbe0640958d1fdd1a"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/wmisub.x64.o",
+   "size": 4959,
+   "sha256": "e472cdc4b608ad982aa9eed48b9777cd049f0ab6ba1c1bb6338f30b7ca105411"
+  },
+  {
+   "path": "Extension-Kit/Persistence-BOF/_bin/wmisub.x86.o",
+   "size": 5131,
+   "sha256": "2e2d770de5509d15206c6fc8acd86c0d19b9bddd8d3043c1b61bc0a57bda45ac"
+  }
+ ]
+}

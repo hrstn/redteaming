@@ -166,15 +166,17 @@ cmd_kubeHunter.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
 });
 
 // ---------- tokenizerSwap ----------
-var cmd_tokenizerSwap = ax.create_command("tokenizerSwap", "Swap MAL<->FUN token ids in BOTH vocab+tokenizer json (M8)", "tokenizerSwap C:\\app\\vocab.json C:\\app\\tokenizer.json -dry");
+var cmd_tokenizerSwap = ax.create_command("tokenizerSwap", "Swap MAL<->FUN token ids in BOTH vocab+tokenizer json (M8). Preview by default; add -dry 0 to actually write", "tokenizerSwap C:\\app\\vocab.json C:\\app\\tokenizer.json -dry");
 cmd_tokenizerSwap.addArgString("vocab", true, "vocab.json path");
 cmd_tokenizerSwap.addArgString("tok", true, "tokenizer.json path (fast tokenizer loads this)");
-cmd_tokenizerSwap.addArgFlagString("-dry", "dry", "1 = preview only, do not write", "0");
+cmd_tokenizerSwap.addArgFlagString("-dry", "dry", "1 = preview only (default), 0 = write files", "1");
 cmd_tokenizerSwap.setPreHook(function (id, cmdline, parsed_json, ...parsed_lines) {
     let vocab = parsed_json["vocab"];
     let tok = parsed_json["tok"];
-    let dry = parsed_json["-dry"] ? 1 : 0;
-    let bof_params = ax.bof_pack("cstr,cstr,int", [vocab, tok, dry]);
+    let dry = parsed_json["-dry"] ? (parsed_json["-dry"] === "0" ? 0 : 1) : 1;
+    // OPSEC: writes are explicit - -dry 0 required; the BOF double-checks confirm
+    let confirm = dry === 0 ? 1 : 0;
+    let bof_params = ax.bof_pack("cstr,cstr,int,int", [vocab, tok, dry, confirm]);
     let bof_path = ax.script_dir() + "_bin/tokenizerSwap." + ax.arch(id) + ".o";
     ax.execute_alias(id, cmdline, `execute bof "${bof_path}" ${bof_params}`, "tokenizerSwap dry=" + dry);
 });

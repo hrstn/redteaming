@@ -13,6 +13,8 @@ ax.script_load(path + "Elevation-BOF/elevate.axs");
 ax.script_load(path + "Execution-BOF/execution.axs");
 ax.script_load(path + "Injection-BOF/inject.axs");
 ax.script_load(path + "LateralMovement-BOF/lateral.axs");
+ax.script_load(path + "Persistence-BOF/persist.axs");
+ax.script_load(path + "Capture-BOF/capture.axs");
 ax.script_load(path + "Postex-BOF/postex.axs");
 ax.script_load(path + "Process-BOF/process.axs");
 ax.script_load(path + "SAL-BOF/sal.axs");

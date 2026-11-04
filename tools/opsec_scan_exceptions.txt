@@ -1,0 +1,53 @@
+# opsec scan exceptions
+# Format: `<path-regex> | <needle-or-label>*`
+#   path-regex  — matched against repo-relative path
+#   needle      — exact pattern/label string to skip for that path;
+#                 `*` skips ALL patterns for the path
+# Keep this list short — every line is a blind spot.
+
+# --- reference material names default/known techniques on purpose ---
+^OSAI-ENUM/encode_strings.py | *
+^OSAI-ENUM/README.md | *
+
+# --- internal audit / remediation notes are gitignored (never tracked,
+#     never scanned; they quote every pattern this scanner uses) ---
+
+# --- the runbook quotes tool names procedurally ---
+^RUNBOOK.md | *
+
+# --- vendored template JSONs keep their documented example hosts/paths ---
+^NaX/profiles/(aws-cloudfront|jquery-stealth)\.json | *
+
+# --- profiler needles exist to detect itself/test ---
+^profiler/gen_profile.py | brand
+^tools/opsec_scan.py | *
+
+# --- tests quote fixtures on purpose ---
+^hostpayload_v2/tests/ | *
+^hostpayload/tests/ | *
+^RemoteLoader/RemoteLoader.Tests/ | *
+^remote_bof_loader/tests/ | *
+
+# --- defaults + docs inside the NaX server (pre-profile fallbacks, docs;
+#     profile-loaded beacons always override these) ---
+^NaX/src_server/ | public default C2 URI
+^NaX/src_server/ | generic beacon header name
+^NaX/src_beacon/include/Instance.h | generic beacon header name
+^NaX/wiki/Malleable-C2-Profiles.md | generic beacon header name
+
+# --- prometheus buildinfo probe path, not a C2 uri ---
+^OSAI-LINUX/cmd/osai-probe/main.go | public default C2 URI
+
+# --- the scanner's own needle tables ---
+^hostpayload_v2/scripts/validate.py | *
+
+# --- a placeholder (.stub) bearer token in the legacy template JSON ---
+^NaX/profiles/ms365-graph.json | hardcoded bearer token
+
+# --- vendored ADCS code prints PEM-format text (cert emission function) ---
+^CS-Remote-OPs-BOF/src/Remote/adcs_request/ | PEM private key
+^Extension-Kit/AD-BOF/ADCS-BOF/ | PEM private key
+
+# --- known follow-up (remediation backlog item 2): encode the AI-BOF secret-
+#     signature table the same way OSAI-ENUM does — do NOT widen this exception ---
+^Extension-Kit/AI-BOF/src/aibof.h | PEM private key
