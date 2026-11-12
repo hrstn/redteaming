@@ -127,3 +127,7 @@ Cenotaph/include/CenKey.h
 # --- internal audit / remediation notes (local only, never committed) ---
 OPSEC-AUDIT-*.md
 FIX-PLAN-*.md
+
+# BOF build outputs (sources are the artifact)
+C2-Tool-Collection/BOF-Sources/ThreadlessInject/*.o
+C2-Tool-Collection/BOF-Sources/PoolPartyV7/*.o
