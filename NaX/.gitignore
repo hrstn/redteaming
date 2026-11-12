@@ -36,3 +36,7 @@ nax_root.conf
 .DS_Store
 *.swp
 *.swo
+
+# Dev-only generated configs (never commit; plugin regenerates for real payloads)
+src_beacon/include/Config.h
+src_beacon/include/Config_sleepmask.h
