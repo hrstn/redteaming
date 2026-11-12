@@ -14,9 +14,15 @@ __declspec(dllimport) int    __cdecl MSVCRT$printf( const char*, ... );
 
 __declspec(dllimport) BOOL    WINAPI KERNEL32$VirtualProtect( LPVOID, SIZE_T, DWORD, PDWORD );
 __declspec(dllimport) DWORD   WINAPI KERNEL32$WaitForMultipleObjects( DWORD, const HANDLE*, BOOL, DWORD );
+__declspec(dllimport) BOOL    WINAPI KERNEL32$RtlLockHeap( PVOID );
+__declspec(dllimport) BOOL    WINAPI KERNEL32$RtlUnlockHeap( PVOID );
+__declspec(dllimport) BOOL    WINAPI KERNEL32$RtlWalkHeap( PVOID, PVOID );
 
 #define VirtualProtect         KERNEL32$VirtualProtect
 #define WaitForMultipleObjects KERNEL32$WaitForMultipleObjects
+#define RtlLockHeap            KERNEL32$RtlLockHeap
+#define RtlUnlockHeap          KERNEL32$RtlUnlockHeap
+#define RtlWalkHeap            KERNEL32$RtlWalkHeap
 
 /* ========= [ ntdll ] ========= */
 

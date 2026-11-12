@@ -971,20 +971,41 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			sleepObf = 1
 		}
 
-		// cmd_id(1) | args_len(4LE)=2 | sleep_obf(1) | pad(1)
-		data := make([]byte, 7)
+		// P11 runtime override: optional min-sleep threshold (ms). When the
+		// operator passes it, a 4-byte LE32 is appended (total args_len 6);
+		// older agents read only the first byte and ignore the rest.
+		minMsRaw, hasMinMs := args["min_ms"].(string)
+		nPayload := 2
+		var minMs uint32
+		if hasMinMs {
+			s := strings.TrimSpace(strings.ToLower(minMsRaw))
+			if n, err := strconv.Atoi(s); err == nil && n > 0 {
+				minMs = uint32(n)
+				nPayload = 6
+			}
+		}
+
+		// cmd_id(1) | args_len(4LE) | sleep_obf(1) | pad(1) [| min_ms(4LE)]
+		data := make([]byte, 5+nPayload)
 		data[0] = CMD_SLEEPOBF_CONFIG
-		binary.LittleEndian.PutUint32(data[1:5], 2)
+		binary.LittleEndian.PutUint32(data[1:5], uint32(nPayload))
 		data[5] = sleepObf
 		data[6] = 0
+		if nPayload == 6 {
+			binary.LittleEndian.PutUint32(data[7:11], minMs)
+		}
 
 		obfName := map[byte]string{0: "off", 1: "on"}[sleepObf]
-		task := adaptix.TaskData{Type: taskTypeTask, Data: data, Sync: true}
-		msg := adaptix.ConsoleMessageData{
-			Status:  messageSeverityInfo,
-			Message: fmt.Sprintf("sleepobf-config: sleep_obf=%s", obfName),
+		msg := fmt.Sprintf("sleepobf-config: sleep_obf=%s", obfName)
+		if nPayload == 6 {
+			msg += fmt.Sprintf("  min_sleep=%dms", minMs)
 		}
-		return task, msg, nil
+		task := adaptix.TaskData{Type: taskTypeTask, Data: data, Sync: true}
+		outMsg := adaptix.ConsoleMessageData{
+			Status:  messageSeverityInfo,
+			Message: msg,
+		}
+		return task, outMsg, nil
 
 	case "sleepmask-set":
 		naxRoot := resolveNaxRoot()

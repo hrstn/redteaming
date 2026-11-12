@@ -551,10 +551,11 @@ function RegisterCommands(listenerType)
     let cmd_sleepobf = ax.create_command(
         "sleepobf-config",
         "Configure sleep obfuscation at runtime",
-        "sleepobf-config {sleep_obf}",
+        "sleepobf-config {sleep_obf} [min_ms]",
         "Queuing sleep obfuscation config..."
     );
     cmd_sleepobf.addArgString("sleep_obf", true, "Sleep obfuscation: on/off");
+    cmd_sleepobf.addArgString("min_ms", false, "Optional min-sleep threshold in ms (P11: sleeps below this skip encryption)");
 
     let group = ax.create_commands_group("NoNameAx", [
         // cmd_whoami,
