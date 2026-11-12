@@ -985,14 +985,16 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			}
 		}
 
-		// cmd_id(1) | args_len(4LE) | sleep_obf(1) | pad(1) [| min_ms(4LE)]
+		// cmd_id(1) | args_len(4LE) | sleep_obf(1) | pad(1)     (legacy 2-byte form)
+		// cmd_id(1) | args_len(4LE) | sleep_obf(1) | min_ms(4LE) (P11 form, 6 bytes)
 		data := make([]byte, 5+nPayload)
 		data[0] = CMD_SLEEPOBF_CONFIG
 		binary.LittleEndian.PutUint32(data[1:5], uint32(nPayload))
 		data[5] = sleepObf
-		data[6] = 0
-		if nPayload == 6 {
-			binary.LittleEndian.PutUint32(data[7:11], minMs)
+		if nPayload == 2 {
+			data[6] = 0
+		} else {
+			binary.LittleEndian.PutUint32(data[6:10], minMs)
 		}
 
 		obfName := map[byte]string{0: "off", 1: "on"}[sleepObf]
