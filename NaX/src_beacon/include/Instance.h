@@ -122,6 +122,7 @@ typedef struct {
     D_API( NtTerminateProcess );
     D_API( TpAllocWork );
     D_API( TpPostWork );
+    D_API( TpWaitForWork );
     D_API( TpReleaseWork );
     D_API( RtlInitializeCriticalSection );
     D_API( RtlEnterCriticalSection );

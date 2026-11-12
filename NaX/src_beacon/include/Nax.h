@@ -47,6 +47,7 @@ typedef struct _NAX_SYSINFO {
 
 FUNC PNAX_INSTANCE NaxBootstrap( VOID );
 FUNC UINT32        NaxEffectiveSleep( PNAX_INSTANCE Nax );
+FUNC HMODULE       NaxTpLoadLibraryW( PNAX_INSTANCE Nax, const WCHAR* name );
 FUNC VOID          NaxGetInternalIp( PNAX_INSTANCE Nax, PCHAR out, UINT32 cap );
 FUNC VOID          NaxGetDomain( PNAX_INSTANCE Nax, PCHAR out, UINT32 cap );
 FUNC VOID          NaxGatherSysInfo( PNAX_INSTANCE Nax, PNAX_SYSINFO info );

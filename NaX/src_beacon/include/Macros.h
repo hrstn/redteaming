@@ -63,6 +63,11 @@
 #define H_AMSISCANBUFFER            0xCEC9C644u  /* amsi.dll!AmsiScanBuffer */
 #define H_AMSI_DLL                  0xAF35FE21u  /* amsi.dll                */
 
+/* P10 - threadpool/call-gadget library load */
+#define H_TPWAITFORWORK             0x413F8BF6u  /* ntdll!TpWaitForWork    */
+#define H_WINHTTP_DLL               0xD7735323u  /* winhttp.dll  (module)  */
+#define H_DSDMO_DLL                 0xF019760Eu  /* dsdmo.dll    (module)  */
+
 /* kernel32.dll exports */
 #define H_GETCURRENTPROCESSID  0xC36D7CE0u
 #define H_GETCURRENTTHREADID   0xF388A295u

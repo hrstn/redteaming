@@ -21907,6 +21907,13 @@ TpPostWork(
 
 VOID
 NTAPI
+TpWaitForWork(
+	IN PTP_WORK Work,
+	IN BOOLEAN CancelPendingCallbacks
+	);
+
+VOID
+NTAPI
 TpReleaseWork(
 	IN PTP_WORK Work
 	);
