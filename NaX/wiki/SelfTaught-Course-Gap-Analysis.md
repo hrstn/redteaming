@@ -321,3 +321,28 @@ release builds on their output like the current Defender methodology does.
 - Almond OffSec, "Evading Elastic EDR's call stack signatures with call gadgets" (Nov 2025,
   LibTPLoadLib) — and Elastic's stated follow-up work.
 - ZeroPoint Security UDRL course framing (referenced by the Stardust/CrystalLoaders courses).
+
+## 11. Implementation status (post-review sprint)
+
+Implemented after this review (see git log):
+
+| Item | State | Notes |
+|---|---|---|
+| P8.1 SSN high-byte validation | ✅ | `Syscall.c` + hooked-stub tally (DetectHooks-lite) |
+| P5-T1 full-wait spoof | ✅ | `SpoofWait` trampoline; saved rets XOR'd with ntdll base |
+| P6 heap masking + key obfuscation | ✅ | lock held across wait; key XOR'd with `BeaconBase ^ SpoofCount` |
+| P11 min-sleep threshold | ✅ | build `NAX_SM_MIN_SLEEP_MS` + runtime `sleepobf-config [min_ms]` |
+| P3 AMSI/ETW patch | ✅ | `Core/Patch.c`, lane-gated, NtProtect-routed, fails soft |
+| P10 TpLoadLibraryW | ✅ | TpWork + dsdmo call-gadget, CFG whitelisted, plain fallback |
+| P9 staging self-erasure | n/a | already existed in BOTH loaders (`NaxWipeStaged`, padded packs) |
+| P8.3 EAT-order neighbors | n/a | HalosGate already walks export-table order |
+| ThreadlessInject BOF | ✅ | `C2-Tool-Collection/BOF-Sources/ThreadlessInject/` |
+| PoolParty V7 BOF | ✅ | `C2-Tool-Collection/BOF-Sources/PoolPartyV7/` (sandbox-validate on target builds) |
+| P5-T2 synthetic unwind-consistent frames | deferred | biggest remaining item; Tier-1 ships now |
+| P12 constexpr FNV1a build | deferred | build-QoL, no OPSEC gain |
+| P14 BUD-style SmInfo handoff | deferred | formalize when the sleepmask ABI is next touched |
+
+Validation performed locally (macOS cross-compile; runtime lanes validated on
+Win11 in the usual Defender/OSAI pass): beacon compile on both lanes × both
+transports, sleepmask release+debug COFF, loader build, end-to-end `pack_nax.py`
+packing with header verification, Go plugin vet + full test suite.
